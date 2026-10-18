@@ -1,25 +1,31 @@
 <script setup lang="ts">
-import { CheckIcon, GitBranchIcon, MonitorIcon, MoonIcon, SunIcon } from '@lucide/vue'
+import { ArrowLeftIcon, CheckIcon, GitBranchIcon, MonitorIcon, MoonIcon, SunIcon } from '@lucide/vue'
 import { storeToRefs } from 'pinia'
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useSettingsStore } from '@/stores/settings'
-import { normalizeCommitLimit } from '@/lib/preferences'
 import type { ThemeMode } from '@/lib/preferences'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import SettingsOptions from '@/components/SettingsOptions.vue'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import ThemePalette from '@/components/ThemePalette.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldTitle } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
-const category = ref('外观')
+const router = useRouter()
+function goBack() {
+ if (router.options.history.state.back) router.back()
+ else void router.push('/')
+}
+const category = ref('通用')
+const resetOpen = ref(false)
 const settings = useSettingsStore()
 const { theme, sidebarWidth, borderRadius, fontSize } = storeToRefs(settings)
-const limit = computed({ get: () => settings.commitLimit, set: (value: string | number) => { settings.commitLimit = normalizeCommitLimit(value) } })
 const themeOptions: { value: ThemeMode; label: string; icon: typeof SunIcon }[] = [
   { value: 'light', label: '亮色', icon: SunIcon },
   { value: 'dark', label: '暗色', icon: MoonIcon },
@@ -31,13 +37,13 @@ function setTheme(value: unknown) { if (themeOptions.some((option) => option.val
 
 <template>
  <div class="flex h-full min-h-0 min-w-0 flex-col gap-3">
-  <Card class="shrink-0 flex-row flex-wrap items-center justify-between gap-2 p-2"><nav aria-label="设置分类" class="flex flex-wrap items-center gap-1"><Button v-for="item in ['外观', '数据', '关于']" :key="item" :variant="category === item ? 'default' : 'ghost'" :aria-current="category === item ? 'page' : undefined" @click="category = item">{{ item }}</Button></nav><p class="ml-auto px-2 text-right text-sm text-muted-foreground">{{ category === '外观' ? '调整界面外观与阅读体验，修改立即生效' : category === '数据' ? '查看应用本地数据位置' : '了解 RepoDeck' }}</p></Card>
+  <Card class="shrink-0 flex-row flex-wrap items-center justify-between gap-2 p-2"><div class="flex items-center gap-2"><Button variant="outline" size="icon-sm" aria-label="返回上一页" @click="goBack"><ArrowLeftIcon /></Button><nav aria-label="设置分类" class="flex flex-wrap items-center gap-1"><Button v-for="item in ['通用', '外观', '仓库', '数据', '关于']" :key="item" :variant="category === item ? 'default' : 'ghost'" :aria-current="category === item ? 'page' : undefined" @click="category = item">{{ item }}</Button></nav></div><p class="ml-auto px-2 text-right text-sm text-muted-foreground">{{ ({通用:'设置启动与浏览偏好', 外观:'调整界面外观与阅读体验', 仓库:'管理扫描目录与仓库排序', 数据:'管理本机数据与操作记录', 关于:'了解 RepoDeck'})[category] }}</p></Card>
   <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
 
    <ScrollArea class="min-h-0 min-w-0 flex-1"><div class="flex flex-col gap-4 pr-2 pb-2">
-    <Card v-if="category === '数据'"><CardHeader><CardTitle>本地数据</CardTitle><CardDescription>开发版使用独立数据目录；安装版使用安装目录下的 setting 和 data</CardDescription></CardHeader><CardContent><p class="break-all text-sm">{{ settings.dataLocation || '网页预览不访问本机数据' }}</p></CardContent></Card>
-    <Card v-else-if="category === '关于'"><CardHeader><CardTitle>RepoDeck · 0.1.2</CardTitle><CardDescription>开发者的 Git 仓库管理工具 · 仓库井然，开发从容</CardDescription></CardHeader><CardContent><p class="break-all text-sm">https://github.com/yeyongzhi/RepoDeck</p></CardContent></Card>
-    <template v-else>
+    <SettingsOptions :key="category" :category="category" /><Card v-if="category === '数据'"><CardHeader><CardTitle>本地数据</CardTitle><CardDescription>开发版使用独立数据目录；安装版使用安装目录下的 setting 和 data</CardDescription></CardHeader><CardContent><p class="break-all text-sm">{{ settings.dataLocation || '网页预览不访问本机数据' }}</p></CardContent></Card>
+
+    <template v-if="category === '外观'">
 <Card class="gap-4 py-4"><CardHeader class="px-4"><CardTitle>主题样式</CardTitle><CardDescription>统一设置界面模式、主题色与布局显示</CardDescription></CardHeader><CardContent class="px-4"><FieldGroup><Field orientation="horizontal" class="settings-row">
                 <FieldContent ><FieldTitle id="theme-label">界面模式</FieldTitle><FieldDescription>默认跟随系统，支持跟随系统外观</FieldDescription></FieldContent>
                 <Tabs :model-value="theme" class="justify-self-end" @update:model-value="setTheme"><TabsList aria-labelledby="theme-label">
@@ -51,7 +57,6 @@ function setTheme(value: unknown) { if (themeOptions.some((option) => option.val
                 {key: 'radius', label: '全局圆角', values: [0,4,8,12,16,24], value: borderRadius},
                 {key: 'font', label: '界面字号', values: [12,14,16,18,20,24], value: fontSize}
               ]" :key="option.key"><FieldLabel :for="option.key">{{ option.label }}</FieldLabel><Select :model-value="String(option.value)" @update:model-value="value => { if (option.key === 'sidebar') sidebarWidth = Number(value); else if (option.key === 'radius') borderRadius = Number(value); else fontSize = Number(value) }"><SelectTrigger :id="option.key" class="w-48 max-w-full justify-self-end"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem v-for="value in option.values" :key="value" :value="String(value)">{{ value }} px</SelectItem></SelectGroup></SelectContent></Select></Field></FieldGroup></CardContent></Card>
-<Card class="gap-4 py-4"><CardHeader class="px-4"><CardTitle>提交记录</CardTitle><CardDescription>控制每次查看分支时加载的提交数量</CardDescription></CardHeader><CardContent class="px-4"><FieldGroup><Field orientation="horizontal" class="settings-row"><FieldContent><FieldLabel for="settings-commit-limit">最近提交条数</FieldLabel><FieldDescription>每个分支展示 1–100 条，默认 10 条</FieldDescription></FieldContent><Input id="settings-commit-limit" v-model="limit" type="number" min="1" max="100" step="1" class="w-24 justify-self-end" /></Field></FieldGroup></CardContent></Card>
       <Card class="h-fit gap-5 py-5">
         <CardHeader class="px-5"><CardTitle>效果预览</CardTitle><CardDescription>当前主题会应用到整个工作台</CardDescription></CardHeader>
         <CardContent class="flex flex-col gap-4 px-5">
@@ -65,7 +70,8 @@ function setTheme(value: unknown) { if (themeOptions.some((option) => option.val
         <CardContent class="flex flex-col items-start gap-1 px-5"><p class="text-sm font-medium">RepoDeck <span class="text-muted-foreground">0.1.2</span></p><p class="text-xs leading-5 text-muted-foreground">偏好设置与扫描目录均保存在本机</p></CardContent>
       </Card>
 
-</template></div></ScrollArea></div></div>
+</template><div v-if="category !== '关于'" class="flex justify-end"><Button variant="outline" @click="resetOpen = true">恢复本页默认设置</Button></div></div></ScrollArea></div></div>
+<Dialog v-model:open="resetOpen"><DialogContent><DialogHeader><DialogTitle>恢复“{{ category }}”默认设置？</DialogTitle><DialogDescription>仅恢复当前分类的偏好，其他分类及仓库数据保留。</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" @click="resetOpen = false">取消</Button><Button @click="settings.resetCategory(category); resetOpen = false">恢复默认</Button></DialogFooter></DialogContent></Dialog>
 </template>
 
 <style scoped>

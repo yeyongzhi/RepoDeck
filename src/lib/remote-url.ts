@@ -20,3 +20,13 @@ export function remoteBranchUrl(remote: string, branch: string | null): string |
   if (host === 'bitbucket.org') return `${base}/src/${encoded}`
   return null
 }
+
+export function remoteCommitUrl(remote: string, hash: string): string | null {
+  const base = remoteWebUrl(remote)
+  if (!base || !/^[a-f0-9]{40,64}$/i.test(hash)) return null
+  const host = new URL(base).hostname.toLowerCase()
+  if (host === 'github.com' || host === 'gitee.com') return `${base}/commit/${hash}`
+  if (host === 'gitlab.com') return `${base}/-/commit/${hash}`
+  if (host === 'bitbucket.org') return `${base}/commits/${hash}`
+  return null
+}

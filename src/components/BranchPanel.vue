@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { computed, ref } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@/lib/git-client'
 import { GitBranchIcon, GitMergeIcon, PlusIcon, SearchIcon, Trash2Icon, TriangleAlertIcon } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import type { RepositorySummary } from '@/types/git'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Item, ItemGroup, ItemMedia, ItemContent, ItemTitle, ItemActions } from '@/components/ui/item'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { InputGroup, InputGroupInput, InputGroupAddon } from '@/components/ui/input-group'
@@ -116,18 +117,22 @@ async function confirm() {
       <Tabs default-value="local" class="gap-3">
         <TabsList><TabsTrigger value="local">本地分支 · {{ repo.localBranches.length }}</TabsTrigger><TabsTrigger value="remote">远端分支 · {{ repo.remoteBranches.length }}</TabsTrigger></TabsList>
         <TabsContent value="local" class="min-w-0">
-          <ScrollArea class="flex max-h-80 flex-col gap-2 ">
-            <div v-for="branch in localBranches" :key="branch" class="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
-              <div class="flex min-w-0 flex-1 items-center gap-2"><GitBranchIcon class="size-4 shrink-0 text-muted-foreground" /><span class="truncate text-sm font-medium" :title="branch">{{ branch }}</span><Badge v-if="branch === repo.currentBranch" variant="secondary">当前</Badge></div>
-              <div class="flex items-center gap-1"><Button variant="outline" size="xs" :disabled="disabled || working || branch === repo.currentBranch" @click="emit('checkout', branch, false)">切换</Button><Button variant="ghost" size="xs" :disabled="disabled || working || branch === repo.currentBranch" @click="openMerge(branch, false)"><GitMergeIcon data-icon="inline-start" />合并</Button><Button variant="destructive-ghost" size="icon-xs" :aria-label="`删除本地分支 ${branch}`" :title="branch === repo.currentBranch ? '不能删除当前分支' : '删除本地分支'" :disabled="disabled || working || branch === repo.currentBranch" @click="openDelete(branch)"><Trash2Icon /></Button></div>
-            </div>
+          <ScrollArea class="max-h-80">
+            <ItemGroup class="gap-2">
+            <Item v-for="branch in localBranches" :key="branch" role="listitem" variant="outline" size="sm" class="min-w-0">
+              <ItemMedia><GitBranchIcon class="size-4 text-muted-foreground" /></ItemMedia><ItemContent class="min-w-0"><ItemTitle class="max-w-full"><span class="truncate" :title="branch">{{ branch }}</span><Badge v-if="branch === repo.currentBranch" variant="secondary">当前</Badge></ItemTitle></ItemContent>
+              <ItemActions class="gap-1"><Button variant="outline" size="xs" :disabled="disabled || working || branch === repo.currentBranch" @click="emit('checkout', branch, false)">切换</Button><Button variant="ghost" size="xs" :disabled="disabled || working || branch === repo.currentBranch" @click="openMerge(branch, false)"><GitMergeIcon data-icon="inline-start" />合并</Button><Button variant="destructive-ghost" size="icon-xs" :aria-label="`删除本地分支 ${branch}`" :title="branch === repo.currentBranch ? '不能删除当前分支' : '删除本地分支'" :disabled="disabled || working || branch === repo.currentBranch" @click="openDelete(branch)"><Trash2Icon /></Button></ItemActions>
+            </Item>
+            </ItemGroup>
             <Empty v-if="!localBranches.length" class="p-4"><EmptyHeader><EmptyTitle>{{ search ? '没有匹配分支' : '暂无本地分支' }}</EmptyTitle><EmptyDescription>可新建分支，或从远端创建本地跟踪分支</EmptyDescription></EmptyHeader></Empty>
           </ScrollArea>
         </TabsContent>
         <TabsContent value="remote" class="min-w-0">
           <p class="mb-3 text-xs text-muted-foreground">来自最近一次 Fetch。选择远端分支可创建本地跟踪分支，或合并到当前本地分支</p>
-          <ScrollArea class="flex max-h-80 flex-col gap-2 ">
-            <div v-for="branch in remoteBranches" :key="branch" class="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border p-3"><div class="flex min-w-0 flex-1 items-center gap-2"><GitBranchIcon class="size-4 shrink-0 text-muted-foreground" /><span class="truncate text-sm font-medium" :title="branch">{{ branch }}</span><Badge v-if="branch === repo.upstream" variant="secondary">跟踪</Badge></div><div class="flex items-center gap-1"><Button variant="outline" size="xs" :disabled="disabled || working" @click="emit('checkout', branch, true)">创建并切换</Button><Button variant="destructive-ghost" size="xs" :disabled="disabled || working" @click="openMerge(branch, true)"><GitMergeIcon data-icon="inline-start" />合并</Button></div></div>
+          <ScrollArea class="max-h-80">
+            <ItemGroup class="gap-2">
+            <Item v-for="branch in remoteBranches" :key="branch" role="listitem" variant="outline" size="sm" class="min-w-0"><ItemMedia><GitBranchIcon class="size-4 text-muted-foreground" /></ItemMedia><ItemContent class="min-w-0"><ItemTitle class="max-w-full"><span class="truncate" :title="branch">{{ branch }}</span><Badge v-if="branch === repo.upstream" variant="secondary">跟踪</Badge></ItemTitle></ItemContent><ItemActions class="gap-1"><Button variant="outline" size="xs" :disabled="disabled || working" @click="emit('checkout', branch, true)">创建并切换</Button><Button variant="destructive-ghost" size="xs" :disabled="disabled || working" @click="openMerge(branch, true)"><GitMergeIcon data-icon="inline-start" />合并</Button></ItemActions></Item>
+            </ItemGroup>
             <Empty v-if="!remoteBranches.length" class="p-4"><EmptyHeader><EmptyTitle>{{ search ? '没有匹配分支' : '暂无远端分支' }}</EmptyTitle><EmptyDescription>检查远端配置，并通过 Fetch 获取分支</EmptyDescription></EmptyHeader></Empty>
           </ScrollArea>
         </TabsContent>

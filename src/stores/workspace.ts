@@ -12,11 +12,12 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const lastUpdated = ref<Date | null>(null)
   const error = ref('')
 
-  async function refresh() {
+  async function refresh(discover = false, scanPath?: string) {
+    if (isLoading.value) return
     isLoading.value = true
     error.value = ''
     try {
-      const snapshot = await invoke<ScanSnapshot>('scan_repositories')
+      const snapshot = await invoke<ScanSnapshot>('scan_repositories', {discover, scanPath: scanPath ?? null})
       roots.value = snapshot.roots
       repositories.value = snapshot.repositories
       issues.value = snapshot.issues
@@ -31,8 +32,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   async function addRoot(path: string, kind?: 'workspace' | 'repository') {
     const result = await invoke<AddRootResult>('add_scan_root', { path, kind })
     roots.value = result.roots
-    await refresh()
+    await refresh(true, kind === 'workspace' ? path : undefined)
     return result.added
+  }
+
+  async function removeRepository(path: string) {
+    await invoke('unregister_repository', {path})
+    await refresh()
   }
 
   async function removeRoot(path: string) {
@@ -40,5 +46,5 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     await refresh()
   }
 
-  return { roots, repositories, issues, isLoading, operationBusy, lastUpdated, error, refresh, addRoot, removeRoot }
+  return { removeRepository, roots, repositories, issues, isLoading, operationBusy, lastUpdated, error, refresh, addRoot, removeRoot }
 })

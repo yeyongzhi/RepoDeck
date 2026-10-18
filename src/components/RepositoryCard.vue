@@ -11,7 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
 const props = defineProps<{ repo: RepositorySummary; layout: 'grid' | 'list'; checked: boolean; disabled: boolean }>()
-const emit = defineEmits<{ select: []; action: [action: 'checkout' | 'fetch' | 'commit' | 'pull' | 'push' | 'copy'] }>()
+const emit = defineEmits<{ select: []; action: [action: 'checkout' | 'fetch' | 'commit' | 'pull' | 'push' | 'copy' | 'groups'] }>()
 const detailsLink = computed(() => ({ name: 'repository', params: { id: props.repo.id } }))
 const state = computed(() => {
   const repo = props.repo
@@ -45,7 +45,7 @@ const clean = computed(() => !props.repo.isDirty && !props.repo.isDetached && !p
             <DropdownMenuItem :disabled="!clean || !repo.upstream || repo.ahead === 0 || repo.behind !== 0" @select="emit('action', 'push')"><ArrowUpFromLineIcon />推送当前分支</DropdownMenuItem>
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
-          <DropdownMenuGroup><DropdownMenuItem @select="emit('action', 'copy')"><CopyIcon />复制仓库路径</DropdownMenuItem></DropdownMenuGroup>
+          <DropdownMenuGroup><DropdownMenuItem @select="emit('action', 'groups')"><FolderGit2Icon />添加到分组</DropdownMenuItem><DropdownMenuItem @select="emit('action', 'copy')"><CopyIcon />复制仓库路径</DropdownMenuItem></DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

@@ -200,3 +200,23 @@
 .shell-resize-handle:focus-visible::after,
 .shell-resize-handle[data-state="drag"]::after { background: repeating-linear-gradient(to bottom, var(--primary) 0 4px, transparent 4px 8px); }
 .shell-resize-handle[data-disabled] { cursor: default; }
+
+/* Keep history controls and pagination outside the scrolling commit list. */
+.repository-detail-tabs > [data-slot="scroll-area"]:has(:is(.commit-history-panel, .repository-fill-panel)[data-state="active"]) > [data-slot="scroll-area-viewport"] {
+  overflow: hidden !important;
+}
+.repository-detail-tabs > [data-slot="scroll-area"]:has(:is(.commit-history-panel, .repository-fill-panel)[data-state="active"]) > [data-slot="scroll-area-viewport"] > div {
+  height: 100%;
+}
+
+:root[data-density="compact"] [data-slot="item"][data-size="sm"] { padding-block: 0.5rem; }
+:root[data-density="comfortable"] [data-slot="item"][data-size="sm"] { padding-block: 1.25rem; }
+:root[data-density="compact"] .repository-card { --density-space: 0.5rem; }
+:root[data-density="comfortable"] .repository-card { --density-space: 1.25rem; }
+
+:root[data-density="compact"] .repository-card [data-slot="card-header"],
+:root[data-density="compact"] .repository-card [data-slot="card-content"],
+:root[data-density="compact"] .repository-card [data-slot="card-footer"] { padding-block: var(--density-space); }
+:root[data-density="comfortable"] .repository-card [data-slot="card-header"],
+:root[data-density="comfortable"] .repository-card [data-slot="card-content"],
+:root[data-density="comfortable"] .repository-card [data-slot="card-footer"] { padding-block: var(--density-space); }

@@ -1,3 +1,4 @@
+mod repository_tools;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
@@ -222,9 +223,20 @@ fn add_scan_root(
         return Err("请选择一个目录。".into());
     }
 
+    if kind.as_deref() == Some("repository") && !has_git_metadata(&canonical_path) { return Err("请选择 Git 仓库根目录".into()); }
     let path = canonical_path.to_string_lossy().into_owned();
+    let registry_file = local_file("data", "registered-repositories.json")?;
+    if registry_file.exists() {
+        let mut registry = read_repository_registry()?;
+        registry.excluded.retain(|excluded| !paths_equal(excluded, &path));
+        atomic_write(&registry_file, &serde_json::to_vec_pretty(&registry).map_err(|e| e.to_string())?)?;
+    }
     let mut roots = read_roots(&app)?;
     let added = !roots.iter().any(|root| paths_equal(&root.path, &path));
+    if !added && kind.as_deref() == Some("workspace") {
+        if let Some(existing) = roots.iter_mut().find(|root| paths_equal(&root.path, &path)) { existing.kind = Some("workspace".into()); }
+        write_roots(&app, &roots)?;
+    }
     if added {
         let kind = kind.unwrap_or_else(|| {
             if has_git_metadata(&canonical_path) {
@@ -262,13 +274,36 @@ fn remove_scan_root(path: String, app: AppHandle) -> Result<Vec<ScanRoot>, Strin
     Ok(roots)
 }
 
+#[derive(Default, Serialize, Deserialize)]
+struct RepositoryRegistry {
+    #[serde(default)] paths: Vec<String>,
+    #[serde(default)] excluded: Vec<String>,
+}
+fn read_repository_registry() -> Result<RepositoryRegistry, String> {
+    let file = local_file("data", "registered-repositories.json")?;
+    if !file.exists() { return Ok(RepositoryRegistry::default()); }
+    serde_json::from_slice(&fs::read(file).map_err(|e| e.to_string())?).map_err(|e| format!("仓库登记文件损坏，原文件已保留：{e}"))
+}
 #[tauri::command]
-fn scan_repositories(app: AppHandle) -> Result<ScanSnapshot, String> {
-    let roots = read_roots(&app)?;
+fn unregister_repository(path: String, app: AppHandle) -> Result<(), String> {
+    let mut registry = read_repository_registry()?;
+    registry.paths.retain(|existing| !paths_equal(existing, &path));
+    if !registry.excluded.iter().any(|existing| paths_equal(existing, &path)) { registry.excluded.push(path.clone()); }
+    atomic_write(&local_file("data", "registered-repositories.json")?, &serde_json::to_vec_pretty(&registry).map_err(|e| e.to_string())?)?;
+    let mut roots = read_roots(&app)?;
+    roots.retain(|root| root.kind.as_deref() != Some("repository") || !paths_equal(&root.path, &path));
+    write_roots(&app, &roots)
+}
+
+fn collect_registered_candidates(roots: &[ScanRoot], registry: &RepositoryRegistry, discover: bool, scan_path: Option<&String>) -> (BTreeMap<String, (PathBuf, String)>, Vec<ScanIssue>) {
     let mut candidates: BTreeMap<String, (PathBuf, String)> = BTreeMap::new();
     let mut issues = Vec::new();
 
-    for root in &roots {
+    for path in &registry.paths {
+        let registered = PathBuf::from(path).canonicalize().unwrap_or_else(|_| PathBuf::from(path));
+        candidates.insert(path_key(&registered.to_string_lossy()), (registered, path.clone()));
+    }
+    for root in roots {
         let root_path = PathBuf::from(&root.path);
         if !root_path.is_dir() {
             issues.push(ScanIssue {
@@ -286,11 +321,27 @@ fn scan_repositories(app: AppHandle) -> Result<ScanSnapshot, String> {
                     message: "该目录已不是 Git 仓库".into(),
                 });
             }
-        } else {
+        } else if discover && scan_path.is_none_or(|selected| paths_equal(selected, &root.path)) {
             scan_directory(&root_path, &root.path, 0, &mut candidates, &mut issues);
         }
     }
 
+    candidates.retain(|_, (path, _)| !registry.excluded.iter().any(|excluded| { let excluded = PathBuf::from(excluded).canonicalize().unwrap_or_else(|_| PathBuf::from(excluded)); paths_equal(&excluded.to_string_lossy(), &path.to_string_lossy()) }));
+    (candidates, issues)
+}
+
+#[tauri::command]
+fn scan_repositories(app: AppHandle, discover: Option<bool>, scan_path: Option<String>) -> Result<ScanSnapshot, String> {
+    let roots = read_roots(&app)?;
+    let file = local_file("data", "registered-repositories.json")?;
+    let migration = !file.exists();
+    let mut registry = read_repository_registry()?;
+    let (candidates, mut issues) = collect_registered_candidates(&roots, &registry, discover.unwrap_or(false) || migration, scan_path.as_ref());
+    for (path, _) in candidates.values() {
+        let path = path.to_string_lossy().into_owned();
+        if !registry.paths.iter().any(|existing| paths_equal(existing, &path)) { registry.paths.push(path); }
+    }
+    atomic_write(&file, &serde_json::to_vec_pretty(&registry).map_err(|e| e.to_string())?)?;
     let mut repositories = Vec::new();
     for (_, (path, scan_root)) in candidates {
         match inspect_repository(&path, scan_root) {
@@ -664,10 +715,22 @@ fn get_repository_tree(
 }
 
 #[tauri::command]
+fn get_repository_dates(path: String) -> Result<Option<(i64, i64)>, String> {
+    let repository = canonical_repository(&path)?;
+    let output = run_git(&repository, &["log", "--all", "--format=%ct"])?;
+    let timestamps: Vec<i64> = output.lines().filter_map(|line| line.parse().ok()).collect();
+    Ok(timestamps.iter().min().zip(timestamps.iter().max()).map(|(first, last)| (*first, *last)))
+}
+
+#[tauri::command]
 fn get_branch_commits(
     path: String,
     branch: String,
     limit: Option<u32>,
+    skip: Option<u32>,
+    since: Option<String>,
+    until: Option<String>,
+    search: Option<String>,
 ) -> Result<Vec<BranchCommit>, String> {
     let repository = canonical_repository(&path)?;
     let local_branches = git_lines(&repository, &["branch", "--format=%(refname:short)"])?;
@@ -691,17 +754,17 @@ fn get_branch_commits(
         return Err("所选分支不存在或已被删除。".into());
     };
     let limit = limit.unwrap_or(10).clamp(1, 100).to_string();
-    let format = "%H%x1f%h%x1f%s%x1f%an%x1f%aI";
-    let output = run_git(
-        &repository,
-        &[
-            "log",
-            "-n",
-            &limit,
-            &format!("--format={format}"),
-            &reference,
-        ],
-    )?;
+    let format = "--format=%H%x1f%h%x1f%s%x1f%an%x1f%cI";
+    let mut args = vec!["log".to_string(), "-n".to_string(), limit, format.to_string()];
+    args.push(format!("--skip={}", skip.unwrap_or(0)));
+    if let Some(value) = since { args.push(format!("--since-as-filter={value}")); }
+    if let Some(value) = until { args.push(format!("--until={value}")); }
+    if let Some(value) = search.filter(|value| !value.trim().is_empty()) {
+        args.extend(["--fixed-strings".to_string(), "--regexp-ignore-case".to_string(), format!("--grep={value}")]);
+    }
+    args.push(reference);
+    args.push("--".to_string());
+    let output = run_git(&repository, &args.iter().map(String::as_str).collect::<Vec<_>>())?;
     Ok(output
         .lines()
         .filter_map(|line| {
@@ -1285,11 +1348,19 @@ pub fn run() {
             get_data_location,
             open_repository_target,
             get_scan_roots,
+            unregister_repository,
             add_scan_root,
             remove_scan_root,
             scan_repositories,
             get_repository_tree,
             get_branch_commits,
+            get_repository_dates,
+            repository_tools::read_repository_groups,
+            repository_tools::save_repository_groups,
+            repository_tools::get_runtime_info,
+            repository_tools::repository_read,
+            repository_tools::repository_action,
+            repository_tools::open_repository_app,
             get_worktree_changes,
             stage_files,
             commit_files,
@@ -1356,5 +1427,29 @@ mod tests {
         let roots: Vec<super::ScanRoot> = serde_json::from_str(r#"[{"path":"E:/Code"}]"#).unwrap();
         assert_eq!(roots[0].path, "E:/Code");
         assert!(roots[0].kind.is_none());
+    }
+}
+
+#[cfg(test)]
+mod registry_tests {
+    use super::*;
+    #[test]
+    fn discovery_registration_survives_removed_sources_and_respects_disabled_scanning() {
+        let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!("repodeck-registry-{nonce}"));
+        let first = root.join("first"); let second = root.join("second");
+        fs::create_dir_all(first.join(".git")).unwrap();
+        fs::create_dir_all(second.join(".git")).unwrap();
+        let roots = vec![ScanRoot {path:root.to_string_lossy().into_owned(), kind:Some("workspace".into())}];
+        let mut registry = RepositoryRegistry {paths:vec![first.to_string_lossy().into_owned()],excluded:vec![]};
+        assert_eq!(collect_registered_candidates(&roots, &registry, false, None).0.len(), 1);
+        let discovered = collect_registered_candidates(&roots, &registry, true, None).0;
+        assert_eq!(discovered.len(), 2);
+        registry.paths = discovered.values().map(|(path,_)| path.to_string_lossy().into_owned()).collect();
+        assert_eq!(collect_registered_candidates(&[], &registry, false, None).0.len(), 2);
+        registry.excluded.push(first.to_string_lossy().into_owned());
+        assert_eq!(collect_registered_candidates(&roots, &registry, true, None).0.len(), 1);
+        assert!(root.starts_with(std::env::temp_dir()));
+        fs::remove_dir_all(root).unwrap();
     }
 }
