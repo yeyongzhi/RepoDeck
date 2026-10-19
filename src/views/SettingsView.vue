@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ArrowLeftIcon, CheckIcon, GitBranchIcon, MonitorIcon, MoonIcon, SunIcon } from '@lucide/vue'
+import { version as packageVersion } from '../../package.json'
 import { storeToRefs } from 'pinia'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -7,6 +8,8 @@ import { useSettingsStore } from '@/stores/settings'
 import type { ThemeMode } from '@/lib/preferences'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import ToolSettings from '@/components/ToolSettings.vue'
+import DataTransfer from '@/components/DataTransfer.vue'
 import SettingsOptions from '@/components/SettingsOptions.vue'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import ThemePalette from '@/components/ThemePalette.vue'
@@ -41,7 +44,7 @@ function setTheme(value: unknown) { if (themeOptions.some((option) => option.val
   <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
 
    <ScrollArea class="min-h-0 min-w-0 flex-1"><div class="flex flex-col gap-4 pr-2 pb-2">
-    <SettingsOptions :key="category" :category="category" /><Card v-if="category === '数据'"><CardHeader><CardTitle>本地数据</CardTitle><CardDescription>开发版使用独立数据目录；安装版使用安装目录下的 setting 和 data</CardDescription></CardHeader><CardContent><p class="break-all text-sm">{{ settings.dataLocation || '网页预览不访问本机数据' }}</p></CardContent></Card>
+    <ToolSettings v-if="category === '通用'" /><DataTransfer v-if="category === '数据'" /><SettingsOptions :key="category" :category="category" /><Card v-if="category === '数据'"><CardHeader><CardTitle>本地数据</CardTitle><CardDescription>开发版使用独立数据目录；安装版使用安装目录下的 setting 和 data</CardDescription></CardHeader><CardContent><p class="break-all text-sm">{{ settings.dataLocation || '网页预览不访问本机数据' }}</p></CardContent></Card>
 
     <template v-if="category === '外观'">
 <Card class="gap-4 py-4"><CardHeader class="px-4"><CardTitle>主题样式</CardTitle><CardDescription>统一设置界面模式、主题色与布局显示</CardDescription></CardHeader><CardContent class="px-4"><FieldGroup><Field orientation="horizontal" class="settings-row">
@@ -67,7 +70,7 @@ function setTheme(value: unknown) { if (themeOptions.some((option) => option.val
           <p class="flex items-center gap-1.5 text-xs text-muted-foreground"><CheckIcon class="size-3.5 text-success" />外观设置已自动保存</p>
         </CardContent>
         <Separator />
-        <CardContent class="flex flex-col items-start gap-1 px-5"><p class="text-sm font-medium">RepoDeck <span class="text-muted-foreground">0.1.2</span></p><p class="text-xs leading-5 text-muted-foreground">偏好设置与扫描目录均保存在本机</p></CardContent>
+        <CardContent class="flex flex-col items-start gap-1 px-5"><p class="text-sm font-medium">RepoDeck <span class="text-muted-foreground">{{ packageVersion }}</span></p><p class="text-xs leading-5 text-muted-foreground">偏好设置与扫描目录均保存在本机</p></CardContent>
       </Card>
 
 </template><div v-if="category !== '关于'" class="flex justify-end"><Button variant="outline" @click="resetOpen = true">恢复本页默认设置</Button></div></div></ScrollArea></div></div>

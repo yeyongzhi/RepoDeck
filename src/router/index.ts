@@ -4,6 +4,7 @@ import HomeView from '@/views/HomeView.vue'
 export const router = createRouter({
   history: createWebHashHistory(),
   routes: [
+    { path: '/workspace', redirect: '/' },
     { path: '/', name: 'home', component: HomeView },
     { path: '/repositories/:id', name: 'repository', component: HomeView },
     { path: '/settings', name: 'settings', component: () => import('@/views/SettingsView.vue') },

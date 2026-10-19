@@ -15,11 +15,11 @@ import {
   CircleAlertIcon,
   CircleCheckIcon,
   FolderGit2Icon,
-  FolderPlusIcon,
   GitCommitHorizontalIcon,
   GitPullRequestIcon,
   LoaderCircleIcon,
   RefreshCwIcon,
+  PlusIcon,
   SearchIcon,
   TriangleAlertIcon,
 } from '@lucide/vue'
@@ -28,6 +28,7 @@ import { watchDebounced } from '@vueuse/core'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import { displayPath } from '@/lib/path'
+import { business, visit, togglePin, initializeBusiness } from '@/lib/business'
 import { cn } from '@/lib/utils'
 import { useSettingsStore } from '@/stores/settings'
 import { formatAppDate } from '@/lib/app-options'
@@ -42,6 +43,8 @@ import RepoTree from '@/components/RepoTree.vue'
 import ChangeStatusBadge from '@/components/ChangeStatusBadge.vue'
 import { useGroupsStore } from '@/stores/groups'
 import GroupBatchFetch from '@/components/GroupBatchFetch.vue'
+import { useCloneStore } from '@/stores/clone'
+import AddRepositoryMenu from '@/components/AddRepositoryMenu.vue'
 import RepositoryCard from '@/components/RepositoryCard.vue'
 import BranchPanel from '@/components/BranchPanel.vue'
 import RepositoryTools from '@/components/RepositoryTools.vue'
@@ -59,37 +62,38 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from '@/components/ui/field'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
 const workspace = useWorkspaceStore()
+const clone = useCloneStore()
 const settings = useSettingsStore()
 const groups = useGroupsStore()
 const activeGroupId = computed(() => typeof route.query.group === 'string' ? route.query.group : '')
 const activeGroup = computed(() => groups.groups.find(item => item.id === activeGroupId.value))
 const detailTab = ref(settings.options.repositoryTab)
-const recentRepositories = ref<Record<string, number>>({})
-try { recentRepositories.value = JSON.parse(localStorage.getItem('repodeck.recent-repositories') || '{}') } catch {}
+const recentRepositories = computed(() => business.visits)
 const desktop = isTauri()
 const route = useRoute()
 const router = useRouter()
 const isDetailPage = computed(() => route.name === 'repository')
 const layout = ref<'grid' | 'list'>('grid')
-try { if (localStorage.getItem('repodeck.repository-layout') === 'list') layout.value = 'list' } catch {}
+layout.value = settings.rememberedLayout
 if (settings.options.repositoryLayout !== 'remember') layout.value = settings.options.repositoryLayout as 'grid' | 'list'
 watch(() => settings.options.repositoryLayout, value => { if (value !== 'remember') layout.value = value as 'grid' | 'list' })
 watch(() => settings.options.repositoryTab, value => { detailTab.value = value })
 watch(() => route.params.id, id => {
  if (typeof id !== 'string') return
  detailTab.value = settings.options.repositoryTab
- recentRepositories.value[id] = Date.now()
- try { localStorage.setItem('repodeck.last-repository', `/repositories/${encodeURIComponent(id)}`); localStorage.setItem('repodeck.recent-repositories', JSON.stringify(recentRepositories.value)) } catch {}
+ visit(id)
 }, { immediate: true })
 function setLayout(value: unknown) {
   if (value !== 'grid' && value !== 'list') return
   layout.value = value
-  try { localStorage.setItem('repodeck.repository-layout', value) } catch { /* Keep the in-memory choice. */ }
+  settings.rememberedLayout = value
 }
 const search = ref('')
+const statusFilters = ref<string[]>([])
+const filterOptions = [{id:'dirty',label:'有改动'},{id:'pull',label:'待拉取'},{id:'push',label:'待推送'},{id:'conflict',label:'有冲突'},{id:'pinned',label:'已置顶'}]
+function toggleFilter(id: string) { statusFilters.value = statusFilters.value.includes(id) ? statusFilters.value.filter(item => item !== id) : [...statusFilters.value,id] }
 const selectedId = ref('')
 const checkedRepositoryIds = ref<string[]>([])
 const selectedRepository = computed(() => workspace.repositories.find((repo) => repo.id === (isDetailPage.value ? String(route.params.id) : selectedId.value)) ?? null)
@@ -122,12 +126,14 @@ const collectionTitle = computed(() => activeGroupId.value ? activeGroup.value?.
 const filteredRepositories = computed(() => {
   const term = search.value.trim().toLowerCase()
   const sorted = [...collection.value].sort((a, b) => {
+    const pinned = Number(business.pins.includes(b.id)) - Number(business.pins.includes(a.id))
+    if (pinned) return pinned
+    if (business.pins.includes(a.id) && business.pins.includes(b.id)) return business.pins.indexOf(a.id) - business.pins.indexOf(b.id)
     if (settings.options.repositorySort === 'recent') return (recentRepositories.value[b.id] ?? 0) - (recentRepositories.value[a.id] ?? 0) || a.name.localeCompare(b.name)
     if (settings.options.repositorySort === 'status') return Number(b.hasConflicts) - Number(a.hasConflicts) || Number(b.isDirty) - Number(a.isDirty) || (b.ahead + b.behind) - (a.ahead + a.behind) || a.name.localeCompare(b.name)
     return a.name.localeCompare(b.name, 'zh-CN', {numeric: true})
   })
-  if (!term) return sorted
-  return sorted.filter((repo) => `${repo.name} ${repo.path} ${repo.currentBranch ?? ''}`.toLowerCase().includes(term))
+  return sorted.filter(repo => !statusFilters.value.length || statusFilters.value.every(filter => filter === 'dirty' ? repo.isDirty : filter === 'pull' ? repo.behind > 0 : filter === 'push' ? repo.ahead > 0 : filter === 'conflict' ? repo.hasConflicts : business.pins.includes(repo.id))).filter((repo) => `${repo.name} ${repo.path} ${repo.currentBranch ?? ''}`.toLowerCase().includes(term))
 })
 const selectedCount = computed(() => checkedRepositoryIds.value.length)
 const allVisibleSelected = computed(() => !!filteredRepositories.value.length && filteredRepositories.value.every((repo) => checkedRepositoryIds.value.includes(repo.id)))
@@ -342,6 +348,15 @@ async function refreshAll() {
   else setNotice(`已刷新 ${workspace.repositories.length} 个仓库`, 'success')
 }
 
+async function relocate(path: string) {
+  try {
+    const next = await open({directory:true,multiple:false,title:'选择仓库的新位置（仅更新登记，不移动文件）'})
+    if (typeof next !== 'string') return
+    await invoke('relocate_repository',{oldPath:path,newPath:next})
+    await initializeBusiness(); await workspace.refresh(); await groups.initialize(true)
+    toast.success('已更新仓库位置，分组和置顶已保留')
+  } catch(e) { toast.error(String(e)) }
+}
 async function addDirectory() {
   if (!desktop) return setNotice('目录选择器只在桌面应用中可用')
   try {
@@ -597,33 +612,34 @@ async function repositoryAction(repo: RepositorySummary, action: 'checkout' | 'f
       <div class="flex flex-wrap items-center gap-2">
         <RepositoryActions v-if="isDetailPage && selectedRepository" :key="selectedRepository.id" :repo="selectedRepository" :disabled="busy" @updated="loadDetails(selectedRepository)"><AppTooltip text="刷新"><Button variant="outline" size="icon-sm" aria-label="刷新" :disabled="busy || workspace.isLoading" @click="refreshAll"><RefreshCwIcon :class="cn(workspace.isLoading && 'animate-spin')" /></Button></AppTooltip></RepositoryActions>
         <template v-if="!isDetailPage || !selectedRepository"><AppTooltip text="刷新"><Button variant="outline" size="icon-sm" aria-label="刷新" :disabled="busy || workspace.isLoading" @click="refreshAll"><RefreshCwIcon :class="cn(workspace.isLoading && 'animate-spin')" /></Button></AppTooltip></template>
-        <Button v-if="!isDetailPage" size="sm" :disabled="busy || workspace.isLoading" @click="addDirectory"><FolderPlusIcon data-icon="inline-start" />添加仓库</Button>
+        <AppTooltip text="快速克隆仓库"><Button variant="outline" size="icon-sm" aria-label="快速克隆仓库" @click="clone.openDialog(true)"><PlusIcon /></Button></AppTooltip>
+        <AddRepositoryMenu v-if="!isDetailPage" :disabled="busy || workspace.isLoading" @local="addDirectory" />
       </div>
     </header></Card>
 
     <Alert v-if="workspace.error" variant="destructive"><CircleAlertIcon /><AlertTitle>扫描失败</AlertTitle><AlertDescription class="break-words">{{ workspace.error }}</AlertDescription></Alert>
-    <Alert v-if="workspace.issues.length" variant="warning"><TriangleAlertIcon /><AlertTitle>部分目录无法扫描</AlertTitle><AlertDescription class="flex flex-col gap-1"><p v-for="issue in workspace.issues.slice(0, 4)" :key="`${issue.path}-${issue.message}`" class="break-all">{{ displayPath(issue.path) }} · {{ issue.message }}</p></AlertDescription></Alert>
+    <Alert v-if="workspace.issues.length" variant="warning"><TriangleAlertIcon /><AlertTitle>部分目录无法扫描</AlertTitle><AlertDescription class="flex flex-col gap-1"><p v-for="issue in workspace.issues.slice(0, 4)" :key="`${issue.path}-${issue.message}`" class="break-all">{{ displayPath(issue.path) }} · {{ issue.message }} <Button size="sm" variant="outline" :disabled="busy || clone.running" @click="relocate(issue.path)">重新定位仓库</Button></p></AlertDescription></Alert>
 
     <div :class="cn('flex min-w-0 flex-col gap-4', isDetailPage && 'min-h-0 flex-1')">
       <section v-if="!isDetailPage && (workspace.repositories.length || workspace.roots.length || activeGroupId)" class="flex min-w-0 flex-col gap-4">
         <Card class="gap-0 py-4">
           <CardContent class="flex flex-wrap items-center gap-3 px-4">
             <div class="mr-auto"><p class="text-sm font-semibold">{{ collectionTitle }} · {{ collection.length }}</p><p class="mt-1 text-xs text-muted-foreground">点击卡片查看详情，勾选仓库进行批量同步</p></div>
-            <InputGroup class="w-full sm:w-64"><InputGroupInput v-model="search" placeholder="搜索仓库、路径或分支" aria-label="搜索仓库" /><InputGroupAddon><SearchIcon /></InputGroupAddon></InputGroup>
-            <ToggleGroup type="single" :model-value="layout" variant="outline" size="sm" aria-label="仓库布局" @update:model-value="setLayout"><ToggleGroupItem value="grid" aria-label="网格布局" title="网格布局"><LayoutGridIcon /></ToggleGroupItem><ToggleGroupItem value="list" aria-label="列表布局" title="列表布局"><ListIcon /></ToggleGroupItem></ToggleGroup>
+            <div class="flex flex-wrap gap-3"><Field v-for="filter in filterOptions" :key="filter.id" orientation="horizontal" class="w-auto"><Checkbox :id="`repo-filter-${filter.id}`" :model-value="statusFilters.includes(filter.id)" @update:model-value="toggleFilter(filter.id)" /><FieldLabel :for="`repo-filter-${filter.id}`">{{ filter.label }}</FieldLabel></Field></div><InputGroup class="w-full sm:w-64"><InputGroupInput v-model="search" placeholder="搜索仓库、路径或分支" aria-label="搜索仓库" /><InputGroupAddon><SearchIcon /></InputGroupAddon></InputGroup>
+            <Tabs :model-value="layout" @update:model-value="setLayout"><TabsList aria-label="仓库布局"><TabsTrigger value="grid" aria-label="网格布局" title="网格布局"><LayoutGridIcon /></TabsTrigger><TabsTrigger value="list" aria-label="列表布局" title="列表布局"><ListIcon /></TabsTrigger></TabsList></Tabs>
             <Button variant="ghost" size="sm" :disabled="!filteredRepositories.length || busy" @click="toggleAllRepositories">{{ allVisibleSelected ? '取消全选' : '全选' }}</Button>
             <Button v-if="!activeGroupId" size="sm" :disabled="busy || workspace.isLoading || workspace.operationBusy || !selectedCount" @click="syncSelected"><LoaderCircleIcon v-if="busy && busyLabel === '批量检查与同步'" data-icon="inline-start" class="animate-spin" /><GitPullRequestIcon v-else data-icon="inline-start" />同步所选 · {{ selectedCount }}</Button>
-          <template v-if="activeGroup"><Button size="sm" variant="outline" :disabled="groups.saving" @click="groups.edit(activeGroup.id)">管理仓库</Button><GroupBatchFetch :key="activeGroup.id" :members="collection" :selected="checkedRepositoryIds" :disabled="busy || workspace.isLoading" /></template></CardContent>
+          <Button size="sm" variant="outline" :disabled="!selectedCount || busy" @click="groups.assignMany(checkedRepositoryIds)">所选加入分组 · {{ selectedCount }}</Button><template v-if="activeGroup"><Button size="sm" variant="outline" :disabled="groups.saving" @click="groups.edit(activeGroup.id)">管理仓库</Button><GroupBatchFetch :key="activeGroup.id" :members="collection" :selected="checkedRepositoryIds" :disabled="busy || workspace.isLoading" /></template></CardContent>
         </Card>
         <div v-if="filteredRepositories.length" :class="cn('grid min-w-0 gap-4', layout === 'grid' && 'repository-gallery')">
-          <RepositoryCard v-for="repo in filteredRepositories" :key="repo.id" :repo="repo" :layout="layout" :checked="checkedRepositoryIds.includes(repo.id)" :disabled="busy || workspace.isLoading || workspace.operationBusy" @select="toggleRepository(repo.id)" @action="repositoryAction(repo, $event)" />
+          <RepositoryCard v-for="repo in filteredRepositories" :key="repo.id" :repo="repo" :layout="layout" :pinned="business.pins.includes(repo.id)" @pin="togglePin(repo.id)" :checked="checkedRepositoryIds.includes(repo.id)" :disabled="busy || workspace.isLoading || workspace.operationBusy" @select="toggleRepository(repo.id)" @action="repositoryAction(repo, $event)" />
         </div>
         <Card v-else class="py-6"><Empty><EmptyHeader><EmptyMedia variant="icon"><FolderGit2Icon /></EmptyMedia><EmptyTitle>{{ search ? '没有匹配的仓库' : activeGroupId ? '分组中暂无可用仓库' : '未发现仓库' }}</EmptyTitle><EmptyDescription>{{ search ? '试试其他名称、路径或分支' : activeGroupId ? '点击管理仓库添加成员；已移除或暂时无法访问的仓库不会显示在列表中' : '所选目录中暂未发现 Git 仓库' }}</EmptyDescription></EmptyHeader></Empty></Card>
         <Card v-if="batchResults.length && !activeGroupId" class="gap-3 py-4"><CardHeader class="px-4"><CardTitle>同步结果</CardTitle><CardDescription>点击结果进入对应仓库，处理需要确认的操作</CardDescription></CardHeader><CardContent class="grid gap-2 px-3 sm:grid-cols-2"><Button v-for="result in batchResults" :key="result.id" variant="ghost" class="h-auto justify-start whitespace-normal py-2 text-left" :disabled="busy" @click="viewRepository(result.id)"><CircleCheckIcon v-if="result.state === 'success'" data-icon="inline-start" /><CircleAlertIcon v-else data-icon="inline-start" /><span class="min-w-0"><span class="block truncate">{{ result.name }}</span><span class="mt-1 block text-xs text-muted-foreground">{{ result.message }}</span></span></Button></CardContent></Card>
       </section>
     <Card v-if="isDetailPage && !selectedRepository" class="min-h-0 flex-1 justify-center py-8"><Empty><EmptyHeader><EmptyMedia variant="icon"><FolderGit2Icon /></EmptyMedia><EmptyTitle>{{ workspace.isLoading ? '正在读取仓库' : '未找到该仓库' }}</EmptyTitle><EmptyDescription>{{ workspace.isLoading ? '扫描完成后会显示仓库详情' : '仓库可能已移除或路径已变化，请返回总览重新选择' }}</EmptyDescription></EmptyHeader><EmptyContent><Button variant="outline" @click="router.push('/')">返回仓库总览</Button></EmptyContent></Empty></Card>
       <section v-if="isDetailPage && selectedRepository" class="mx-auto flex w-full min-h-0 min-w-0 flex-1 flex-col gap-4">
-<Tabs :key="selectedRepository.id" v-model="detailTab" class="repository-detail-tabs flex min-h-0 flex-1 flex-col gap-4 rounded-xl border bg-card p-4 shadow-sm"><TabsList class="h-10 max-w-full shrink-0 overflow-x-auto p-1"><TabsTrigger value="overview" class="px-3">总览</TabsTrigger><TabsTrigger value="branches" class="px-3">分支管理</TabsTrigger><TabsTrigger value="commits" class="px-3">提交历史</TabsTrigger><TabsTrigger value="worktree" class="px-3">工作区</TabsTrigger><TabsTrigger value="compare" class="px-3">分支对比</TabsTrigger><TabsTrigger value="stash" class="px-3">暂存区</TabsTrigger><TabsTrigger value="tags" class="px-3">标签管理</TabsTrigger><TabsTrigger value="activity" class="px-3">操作记录</TabsTrigger></TabsList><ScrollArea class="min-h-0 flex-1"><TabsContent value="overview"><div class="mb-3 flex flex-wrap items-center gap-x-6 gap-y-2 px-4 text-xs text-muted-foreground" title="基于本地所有分支和标签的提交时间；浅克隆仅包含已获取的历史"><span class="inline-flex items-center gap-2"><CalendarDaysIcon class="size-4" />创建日期：{{ repositoryDates ? formatRepositoryDate(repositoryDates[0]) : summaryLoading ? '加载中…' : repositoryDatesError ? '读取失败' : '暂无提交' }}</span><span>最新更新日期：{{ repositoryDates ? formatRepositoryDate(repositoryDates[1]) : summaryLoading ? '加载中…' : repositoryDatesError ? '读取失败' : '暂无提交' }}</span></div><ItemGroup class="overflow-hidden rounded-xl border bg-card"><template v-for="item in overviewItems" :key="item.label"><Item size="sm" class="flex-nowrap gap-3 px-4 py-2.5 transition-colors hover:bg-muted/40"><ItemMedia class="size-8 [&_svg]:size-4"><FolderOpenIcon v-if="item.local" /><GitBranchIcon v-else-if="item.label.includes('分支')" /><GlobeIcon v-else /></ItemMedia><ItemContent class="min-w-0 gap-1"><ItemTitle>{{ item.label }}</ItemTitle><ItemDescription class="break-all leading-relaxed"><template v-if="'branchInfo' in item">{{ item.branchInfo.current }} / <AppTooltip v-if="item.branchInfo.remoteUrl" :text="item.branchInfo.remoteUrl"><span tabindex="0">{{ item.branchInfo.upstream }}</span></AppTooltip><span v-else>{{ item.branchInfo.upstream }}</span></template><template v-else>{{ item.value }}</template></ItemDescription></ItemContent><ItemActions><AppTooltip :text="item.target ? item.tooltip : '未配置对应地址或暂不支持此远程平台的分支链接'"><span tabindex="0"><Button variant="outline" size="icon-sm" :aria-label="item.tooltip" :disabled="!item.target" @click="openOverviewItem(item)"><FolderOpenIcon v-if="item.local" /><ExternalLinkIcon v-else /></Button></span></AppTooltip></ItemActions></Item></template></ItemGroup>
+<Tabs :key="selectedRepository.id" v-model="detailTab" class="repository-detail-tabs flex min-h-0 flex-1 flex-col gap-4 rounded-xl border bg-card p-4 shadow-sm"><div class="flex shrink-0 flex-wrap items-center gap-2"><TabsList class="h-auto max-w-full shrink-0 flex-wrap justify-start p-1"><TabsTrigger value="overview" class="px-3">总览</TabsTrigger><TabsTrigger value="branches" class="px-3">分支管理</TabsTrigger><TabsTrigger value="commits" class="px-3">提交历史</TabsTrigger><TabsTrigger value="worktree" class="px-3">工作区</TabsTrigger></TabsList><Select :model-value="['compare','stash','tags','activity'].includes(detailTab) ? detailTab : ''" @update:model-value="value => { detailTab = String(value) }"><SelectTrigger class="w-32" aria-label="更多仓库工具"><SelectValue placeholder="更多工具" /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="compare">分支对比</SelectItem><SelectItem value="stash">暂存区</SelectItem><SelectItem value="tags">标签管理</SelectItem><SelectItem value="activity">操作记录</SelectItem></SelectGroup></SelectContent></Select></div><ScrollArea class="min-h-0 flex-1"><TabsContent value="overview"><div class="mb-3 flex flex-wrap items-center gap-x-6 gap-y-2 px-4 text-xs text-muted-foreground" title="基于本地所有分支和标签的提交时间；浅克隆仅包含已获取的历史"><span class="inline-flex items-center gap-2"><CalendarDaysIcon class="size-4" />创建日期：{{ repositoryDates ? formatRepositoryDate(repositoryDates[0]) : summaryLoading ? '加载中…' : repositoryDatesError ? '读取失败' : '暂无提交' }}</span><span>最新更新日期：{{ repositoryDates ? formatRepositoryDate(repositoryDates[1]) : summaryLoading ? '加载中…' : repositoryDatesError ? '读取失败' : '暂无提交' }}</span></div><ItemGroup class="overflow-hidden rounded-xl border bg-card"><template v-for="item in overviewItems" :key="item.label"><Item size="sm" class="flex-nowrap gap-3 px-4 py-2.5 transition-colors hover:bg-muted/40"><ItemMedia class="size-8 [&_svg]:size-4"><FolderOpenIcon v-if="item.local" /><GitBranchIcon v-else-if="item.label.includes('分支')" /><GlobeIcon v-else /></ItemMedia><ItemContent class="min-w-0 gap-1"><ItemTitle>{{ item.label }}</ItemTitle><ItemDescription class="break-all leading-relaxed"><template v-if="'branchInfo' in item">{{ item.branchInfo.current }} / <AppTooltip v-if="item.branchInfo.remoteUrl" :text="item.branchInfo.remoteUrl"><span tabindex="0">{{ item.branchInfo.upstream }}</span></AppTooltip><span v-else>{{ item.branchInfo.upstream }}</span></template><template v-else>{{ item.value }}</template></ItemDescription></ItemContent><ItemActions><AppTooltip :text="item.target ? item.tooltip : '未配置对应地址或暂不支持此远程平台的分支链接'"><span tabindex="0"><Button variant="outline" size="icon-sm" :aria-label="item.tooltip" :disabled="!item.target" @click="openOverviewItem(item)"><FolderOpenIcon v-if="item.local" /><ExternalLinkIcon v-else /></Button></span></AppTooltip></ItemActions></Item></template></ItemGroup>
 <div class="mt-4 grid min-w-0 grid-cols-3 gap-3">
  <Card class="min-w-0 gap-3 py-4">
   <CardHeader class="flex flex-row items-center justify-between gap-2 px-4"><CardTitle class="flex shrink-0 items-center gap-2 text-sm"><FolderOpenIcon class="size-4" />工作区状态</CardTitle><Badge :variant="selectedRepository.hasConflicts ? 'destructive' : selectedRepository.operationInProgress || selectedRepository.isDirty ? 'warning' : 'success'" class="min-w-0 max-w-[55%]" :title="selectedRepository.hasConflicts ? '存在冲突' : selectedRepository.operationInProgress ? 'Git 操作待完成' : selectedRepository.isDirty ? '有未提交改动' : '工作区干净'"><span class="truncate">{{ selectedRepository.hasConflicts ? '存在冲突' : selectedRepository.operationInProgress ? '操作待完成' : selectedRepository.isDirty ? '有改动' : '工作区干净' }}</span></Badge></CardHeader>
@@ -653,7 +669,7 @@ async function repositoryAction(repo: RepositorySummary, action: 'checkout' | 'f
     </div>
 
 
-    <Card v-if="!isDetailPage && !activeGroupId && !workspace.repositories.length && !workspace.roots.length" class="py-8"><Empty><EmptyHeader><EmptyMedia variant="icon"><FolderGit2Icon /></EmptyMedia><EmptyTitle>把你的项目放在同一个工作台</EmptyTitle><EmptyDescription>添加单个 Git 仓库；也可在设置中配置固定扫描目录，自动发现仓库</EmptyDescription></EmptyHeader><EmptyContent><Button :disabled="workspace.isLoading" @click="addDirectory"><FolderPlusIcon data-icon="inline-start" />添加第一个仓库</Button><p class="text-xs text-muted-foreground">扫描设置与偏好保存在本机</p></EmptyContent></Empty></Card>
+    <Card v-if="!isDetailPage && !activeGroupId && !workspace.repositories.length && !workspace.roots.length" class="py-8"><Empty><EmptyHeader><EmptyMedia variant="icon"><FolderGit2Icon /></EmptyMedia><EmptyTitle>把你的项目放在同一个工作台</EmptyTitle><EmptyDescription>添加单个 Git 仓库；也可在设置中配置固定扫描目录，自动发现仓库</EmptyDescription></EmptyHeader><EmptyContent><AddRepositoryMenu :disabled="workspace.isLoading" label="添加第一个仓库" @local="addDirectory" /><p class="text-xs text-muted-foreground">扫描设置与偏好保存在本机</p></EmptyContent></Empty></Card>
 
     <Dialog v-model:open="dialogOpen">
       <DialogContent class="max-h-[85dvh] flex flex-col">

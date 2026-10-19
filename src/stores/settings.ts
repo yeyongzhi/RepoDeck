@@ -21,14 +21,21 @@ export const useSettingsStore = defineStore('settings', () => {
   const borderRadius = ref(16)
   const fontSize = ref(14)
   const dataLocation = ref('')
+  const rememberedLayout = ref<'grid' | 'list'>(localStorage.getItem('repodeck.repository-layout') === 'list' ? 'list' : 'grid')
+  const editorPath = ref('')
+  const terminalPath = ref('')
   let ready = !isTauri()
   let saveQueue = Promise.resolve()
   async function initialize() {
     if (!isTauri()) return
+    ready = false
     try {
       dataLocation.value = await invoke<string>('get_data_location')
       const value = await invoke<Record<string, unknown> | null>('read_preferences')
       if (value) {
+        rememberedLayout.value = value.rememberedLayout === 'list' ? 'list' : 'grid'
+        editorPath.value = typeof value.editorPath === 'string' ? value.editorPath : ''
+        terminalPath.value = typeof value.terminalPath === 'string' ? value.terminalPath : ''
         options.value = normalizeAppOptions(value.options)
         accentSource.value = value.accentSource === 'custom' ? 'custom' : 'palette'
         const normalized = readPreferences(JSON.stringify(value))
@@ -38,7 +45,7 @@ export const useSettingsStore = defineStore('settings', () => {
         if ([12,14,16,18,20,24].includes(Number(value.fontSize))) fontSize.value = Number(value.fontSize)
       }
       ready = true
-      if (!value) await invoke('save_preferences', { preferences: { options: options.value, theme: theme.value, accent: accent.value, accentSource: accentSource.value, commitLimit: commitLimit.value, sidebarWidth: sidebarWidth.value, borderRadius: borderRadius.value, fontSize: fontSize.value } })
+      if (!value) await invoke('save_preferences', { preferences: { options: options.value, theme: theme.value, accent: accent.value, accentSource: accentSource.value, commitLimit: commitLimit.value, sidebarWidth: sidebarWidth.value, borderRadius: borderRadius.value, fontSize: fontSize.value, rememberedLayout: rememberedLayout.value, editorPath: editorPath.value, terminalPath: terminalPath.value } })
     } catch (reason) { toast.error(String(reason)) }
   }
   const prefersDark = usePreferredDark()
@@ -61,9 +68,9 @@ export const useSettingsStore = defineStore('settings', () => {
     document.documentElement.style.setProperty('--radius', `${borderRadius.value}px`)
     document.documentElement.style.fontSize = `${fontSize.value}px`
   }, { immediate: true })
-  watch([options, theme, accent, accentSource, commitLimit, sidebarWidth, borderRadius, fontSize], () => {
+  watch([options, theme, accent, accentSource, commitLimit, sidebarWidth, borderRadius, fontSize, rememberedLayout, editorPath, terminalPath], () => {
     if (!ready) return
-    const preferences = { options: normalizeAppOptions(options.value), theme: theme.value, accent: accent.value, accentSource: accentSource.value, commitLimit: normalizeCommitLimit(commitLimit.value), sidebarWidth: sidebarWidth.value, borderRadius: borderRadius.value, fontSize: fontSize.value }
+    const preferences = { options: normalizeAppOptions(options.value), theme: theme.value, accent: accent.value, accentSource: accentSource.value, commitLimit: normalizeCommitLimit(commitLimit.value), sidebarWidth: sidebarWidth.value, borderRadius: borderRadius.value, fontSize: fontSize.value, rememberedLayout: rememberedLayout.value, editorPath: editorPath.value, terminalPath: terminalPath.value }
     if (isTauri()) {
       saveQueue = saveQueue.then(() => invoke('save_preferences', { preferences })).then(() => {}).catch(reason => { toast.error(String(reason)) })
       return
@@ -74,11 +81,13 @@ export const useSettingsStore = defineStore('settings', () => {
   }, { flush: 'sync', deep: true })
 
   function resetCategory(category: string) {
+    if (category === '通用') { editorPath.value = ''; terminalPath.value = ''; rememberedLayout.value = 'grid' }
     if (category === '通用') for (const key of ['startup', 'repositoryLayout', 'repositoryTab', 'dateFormat'] as const) options.value[key] = defaultAppOptions[key]
     if (category === '外观') { theme.value = 'system'; accent.value = 'blue'; accentSource.value = 'palette'; sidebarWidth.value = 240; borderRadius.value = 16; fontSize.value = 14; options.value.density = 'standard' }
     if (category === '仓库') { options.value.repositorySort = 'name'; options.value.startupScan = 'on' }
     if (category === '数据') options.value.activityLimit = 300
   }
   watch(() => options.value.density, value => { document.documentElement.dataset.density = value }, { immediate: true })
-  return { options, resetCategory, theme, accent, accentSource, commitLimit, isDark, sidebarWidth, borderRadius, fontSize, dataLocation, initialize }
+  function flushSettings() { return saveQueue }
+  return { flushSettings, rememberedLayout, editorPath, terminalPath, options, resetCategory, theme, accent, accentSource, commitLimit, isDark, sidebarWidth, borderRadius, fontSize, dataLocation, initialize }
 })

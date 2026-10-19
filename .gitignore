@@ -28,3 +28,7 @@ src-tauri/gen/schemas
 *.njsproj
 *.sln
 *.sw?
+
+# VitePress
+docs/.vitepress/cache
+docs/.vitepress/dist

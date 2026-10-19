@@ -26,6 +26,8 @@ export interface RepositorySummary {
   remoteBranches: string[]
   ahead: number
   behind: number
+  changedFiles?: number
+  lastFetched?: number | null
   isDirty: boolean
   hasConflicts: boolean
   operationInProgress: boolean

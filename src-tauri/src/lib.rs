@@ -1,4 +1,6 @@
 mod repository_tools;
+mod storage;
+mod clone;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
@@ -60,6 +62,8 @@ pub struct RepositorySummary {
     pub remote_branches: Vec<String>,
     pub ahead: u32,
     pub behind: u32,
+    pub changed_files: usize,
+    pub last_fetched: Option<u64>,
     pub is_dirty: bool,
     pub has_conflicts: bool,
     pub operation_in_progress: bool,
@@ -188,20 +192,11 @@ fn get_data_location() -> Result<String, String> {
 }
 
 fn read_roots(app: &AppHandle) -> Result<Vec<ScanRoot>, String> {
-    let file = roots_file(app)?;
-    if !file.exists() {
-        return Ok(Vec::new());
-    }
-
-    let contents = fs::read(&file).map_err(|error| format!("无法读取扫描目录设置：{error}"))?;
-    serde_json::from_slice(&contents).map_err(|error| format!("扫描目录设置格式无效：{error}"))
+    let value = storage::migrate("roots", &roots_file(app)?)?.unwrap_or_else(|| serde_json::json!([]));
+    serde_json::from_value(value).map_err(|e| e.to_string())
 }
-
-fn write_roots(app: &AppHandle, roots: &[ScanRoot]) -> Result<(), String> {
-    let file = roots_file(app)?;
-    let contents = serde_json::to_vec_pretty(roots)
-        .map_err(|error| format!("无法整理扫描目录设置：{error}"))?;
-    atomic_write(&file, &contents)
+fn write_roots(_app: &AppHandle, roots: &[ScanRoot]) -> Result<(), String> {
+    storage::write("roots", &serde_json::to_value(roots).map_err(|e| e.to_string())?)
 }
 
 #[tauri::command]
@@ -225,12 +220,10 @@ fn add_scan_root(
 
     if kind.as_deref() == Some("repository") && !has_git_metadata(&canonical_path) { return Err("请选择 Git 仓库根目录".into()); }
     let path = canonical_path.to_string_lossy().into_owned();
-    let registry_file = local_file("data", "registered-repositories.json")?;
-    if registry_file.exists() {
-        let mut registry = read_repository_registry()?;
-        registry.excluded.retain(|excluded| !paths_equal(excluded, &path));
-        atomic_write(&registry_file, &serde_json::to_vec_pretty(&registry).map_err(|e| e.to_string())?)?;
-    }
+    let mut registry = read_repository_registry()?;
+    registry.excluded.retain(|excluded| !paths_equal(excluded, &path));
+    if kind.as_deref() == Some("repository") && !registry.paths.iter().any(|p| paths_equal(p, &path)) { registry.paths.push(path.clone()); }
+    storage::write("registry", &serde_json::to_value(&registry).map_err(|e|e.to_string())?)?;
     let mut roots = read_roots(&app)?;
     let added = !roots.iter().any(|root| paths_equal(&root.path, &path));
     if !added && kind.as_deref() == Some("workspace") {
@@ -280,16 +273,15 @@ struct RepositoryRegistry {
     #[serde(default)] excluded: Vec<String>,
 }
 fn read_repository_registry() -> Result<RepositoryRegistry, String> {
-    let file = local_file("data", "registered-repositories.json")?;
-    if !file.exists() { return Ok(RepositoryRegistry::default()); }
-    serde_json::from_slice(&fs::read(file).map_err(|e| e.to_string())?).map_err(|e| format!("仓库登记文件损坏，原文件已保留：{e}"))
+    let value = storage::migrate("registry", &local_file("data", "registered-repositories.json")?)?.unwrap_or_else(|| serde_json::json!({"paths":[],"excluded":[]}));
+    serde_json::from_value(value).map_err(|e|e.to_string())
 }
 #[tauri::command]
 fn unregister_repository(path: String, app: AppHandle) -> Result<(), String> {
     let mut registry = read_repository_registry()?;
     registry.paths.retain(|existing| !paths_equal(existing, &path));
     if !registry.excluded.iter().any(|existing| paths_equal(existing, &path)) { registry.excluded.push(path.clone()); }
-    atomic_write(&local_file("data", "registered-repositories.json")?, &serde_json::to_vec_pretty(&registry).map_err(|e| e.to_string())?)?;
+    storage::write("registry", &serde_json::to_value(&registry).map_err(|e| e.to_string())?)?;
     let mut roots = read_roots(&app)?;
     roots.retain(|root| root.kind.as_deref() != Some("repository") || !paths_equal(&root.path, &path));
     write_roots(&app, &roots)
@@ -333,15 +325,14 @@ fn collect_registered_candidates(roots: &[ScanRoot], registry: &RepositoryRegist
 #[tauri::command]
 fn scan_repositories(app: AppHandle, discover: Option<bool>, scan_path: Option<String>) -> Result<ScanSnapshot, String> {
     let roots = read_roots(&app)?;
-    let file = local_file("data", "registered-repositories.json")?;
-    let migration = !file.exists();
+    let migration = storage::read("registry")?.is_none();
     let mut registry = read_repository_registry()?;
     let (candidates, mut issues) = collect_registered_candidates(&roots, &registry, discover.unwrap_or(false) || migration, scan_path.as_ref());
     for (path, _) in candidates.values() {
         let path = path.to_string_lossy().into_owned();
         if !registry.paths.iter().any(|existing| paths_equal(existing, &path)) { registry.paths.push(path); }
     }
-    atomic_write(&file, &serde_json::to_vec_pretty(&registry).map_err(|e| e.to_string())?)?;
+    storage::write("registry", &serde_json::to_value(&registry).map_err(|e|e.to_string())?)?;
     let mut repositories = Vec::new();
     for (_, (path, scan_root)) in candidates {
         match inspect_repository(&path, scan_root) {
@@ -523,6 +514,8 @@ fn inspect_repository(path: &Path, scan_root: String) -> Result<RepositorySummar
         remote_branches,
         ahead,
         behind,
+        changed_files: status.lines().filter(|l| !l.is_empty() && !l.starts_with('#')).count(),
+        last_fetched: run_git(path, &["rev-parse", "--git-path", "FETCH_HEAD"]).ok().and_then(|name| fs::metadata(path.join(name.trim())).ok()).and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()),
         is_dirty,
         has_conflicts,
         operation_in_progress,
@@ -545,8 +538,8 @@ fn open_repository_target(target: String, local: bool) -> Result<(), String> {
         let path = PathBuf::from(&target)
             .canonicalize()
             .map_err(|e| format!("无法访问目录：{e}"))?;
-        if !path.is_dir() || !has_git_metadata(&path) {
-            return Err("该目录不是 Git 仓库".into());
+        if !path.is_dir() {
+            return Err("请选择存在的目录".into());
         }
         let value = path.to_string_lossy().into_owned();
         if let Some(unc) = value.strip_prefix(r"\\?\UNC\") {
@@ -1343,6 +1336,19 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            clone::clone_repository,
+            clone::stop_clone,
+            clone::read_clone_directories,
+            clone::remember_clone_directory,
+            storage::read_business_data,
+            storage::save_business_data,
+            storage::migrate_browser_data,
+            storage::export_app_data,
+            storage::preview_app_import,
+            storage::import_app_data,
+            storage::relocate_repository,
+            storage::export_preferences,
+            storage::import_preferences,
             read_preferences,
             save_preferences,
             get_data_location,

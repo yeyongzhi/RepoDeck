@@ -8,10 +8,11 @@ export const useGroupsStore = defineStore('groups', () => {
  const error = ref('')
  const editing = ref<string | null>(null)
  const repository = ref<string | null>(null)
+ const repositories = ref<string[]>([])
  const dialogOpen = ref(false)
  let ready = false
- async function initialize() {
-  if (ready) return
+ async function initialize(force = false) {
+  if (ready && !force) return
   try {
    const value = isTauri() ? await invoke<RepositoryGroup[]>('read_repository_groups') : JSON.parse(localStorage.getItem('repodeck.groups') || '[]')
    if (!Array.isArray(value) || value.some(item => !item || typeof item.id !== 'string' || typeof item.name !== 'string' || !Array.isArray(item.members) || item.members.some((member: unknown) => typeof member !== 'string'))) throw new Error('分组数据格式无效，原数据已保留')
@@ -29,7 +30,8 @@ export const useGroupsStore = defineStore('groups', () => {
    groups.value = snapshot; error.value = ''
   } finally { saving.value = false }
  }
- function edit(id: string | null = null) { editing.value = id; repository.value = null; dialogOpen.value = true }
- function assign(id: string) { repository.value = id; editing.value = null; dialogOpen.value = true }
- return { groups, saving, error, editing, repository, dialogOpen, initialize, save, edit, assign }
+ function edit(id: string | null = null) { editing.value = id; repository.value = null; repositories.value = []; dialogOpen.value = true }
+ function assign(id: string) { repository.value = id; repositories.value = []; editing.value = null; dialogOpen.value = true }
+ function assignMany(ids: string[]) { repositories.value = [...ids]; repository.value = null; editing.value = null; dialogOpen.value = true }
+ return { repositories, assignMany, groups, saving, error, editing, repository, dialogOpen, initialize, save, edit, assign }
 })

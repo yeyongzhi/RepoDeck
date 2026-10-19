@@ -293,6 +293,17 @@ pub fn repository_action(
 #[tauri::command]
 pub fn open_repository_app(path: String, kind: String) -> Result<(), String> {
     let repo = canonical_repository(&path)?;
+    let preferences = super::read_preferences()?.unwrap_or_else(|| json!({}));
+    let custom = preferences[if kind == "editor" {"editorPath"} else {"terminalPath"}].as_str().unwrap_or("");
+    if !custom.is_empty() {
+        let executable = PathBuf::from(custom);
+        if !executable.is_absolute() || !executable.is_file() { return Err("配置的工具路径不存在，请在设置中重新选择".into()); }
+        #[cfg(windows)]
+        if !executable.extension().is_some_and(|e| e.eq_ignore_ascii_case("exe")) { return Err("请选择 .exe 可执行程序".into()); }
+        let mut command = Command::new(executable);
+        if kind == "editor" { command.arg(&repo); } else if kind == "terminal" { command.current_dir(&repo); } else { return Err("不支持的应用入口".into()); }
+        return command.spawn().map(|_|()).map_err(|e| format!("打开配置的工具失败：{e}"));
+    }
     let mut command = match kind.as_str() {
         "editor" => {
             #[cfg(windows)]
@@ -474,7 +485,7 @@ pub struct RepositoryGroup {
     color: String,
     members: Vec<String>,
 }
-fn validate_groups(groups: &[RepositoryGroup]) -> Result<(), String> {
+pub(crate) fn validate_groups(groups: &[RepositoryGroup]) -> Result<(), String> {
     let mut ids = std::collections::HashSet::new();
     let mut names = std::collections::HashSet::new();
     if groups.len() > 200 {
@@ -500,24 +511,14 @@ fn validate_groups(groups: &[RepositoryGroup]) -> Result<(), String> {
 }
 #[tauri::command]
 pub fn read_repository_groups() -> Result<Vec<RepositoryGroup>, String> {
-    let file = local_file("data", "repository-groups.json")?;
-    if !file.exists() {
-        return Ok(Vec::new());
-    }
-    let groups: Vec<RepositoryGroup> =
-        serde_json::from_slice(&fs::read(&file).map_err(|e| e.to_string())?)
-            .map_err(|e| format!("分组文件损坏，已保留原文件：{e}"))?;
+    let groups: Vec<RepositoryGroup> = serde_json::from_value(storage::migrate("groups", &local_file("data", "repository-groups.json")?)?.unwrap_or_else(|| json!([]))).map_err(|e|e.to_string())?;
     validate_groups(&groups)?;
     Ok(groups)
 }
 #[tauri::command]
 pub fn save_repository_groups(groups: Vec<RepositoryGroup>) -> Result<(), String> {
     validate_groups(&groups)?;
-    let file = local_file("data", "repository-groups.json")?;
-    atomic_write(
-        &file,
-        &serde_json::to_vec_pretty(&groups).map_err(|e| e.to_string())?,
-    )
+    storage::write("groups", &serde_json::to_value(groups).map_err(|e|e.to_string())?)
 }
 
 #[cfg(test)]
