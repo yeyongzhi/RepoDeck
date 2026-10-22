@@ -56,9 +56,18 @@ async function add(kind: 'repository') {
  try {
   const path = await open({directory: true, multiple: false, title: '选择 Git 仓库根目录'})
   if (typeof path !== 'string') return
-  await workspace.addRoot(path, kind)
+  const added = await workspace.addRoot(path, kind)
   if (workspace.error) return toast.error(workspace.error)
+  toast.success(added ? '仓库已添加' : '仓库已登记，状态已更新')
   { const repo = workspace.repositories.find(repo => equal(repo.path, path)); if (repo) void router.push({name: 'repository', params: {id: repo.id}}) }
+ } catch (reason) { toast.error(String(reason)) }
+}
+async function refreshRepositories() {
+ if (!isTauri()) return toast.info('请在桌面应用中刷新本机仓库')
+ try {
+  await workspace.refresh(true)
+  if (workspace.error) toast.error(workspace.error)
+  else toast.success(`已刷新 ${workspace.repositories.length} 个仓库${workspace.issues.length ? '，部分目录无法访问' : ''}`)
  } catch (reason) { toast.error(String(reason)) }
 }
 const pendingRemoval = ref<string | null>(null)
@@ -89,17 +98,17 @@ onMounted(() => { if (isTauri() && !workspace.lastUpdated) void workspace.refres
    <RouterLink to="/" class="flex h-16 shrink-0 items-center gap-2 px-4 outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50" aria-label="RepoDeck 首页"><span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"><GitBranchIcon class="size-[1.125rem]" /></span><span v-if="!collapsed" class="text-base font-semibold">RepoDeck</span></RouterLink>
 
    <div v-if="!collapsed && repositoryModule" class="flex shrink-0 items-center gap-1 p-2">
-    <InputGroup class="min-w-0 flex-1"><InputGroupAddon><SearchIcon /></InputGroupAddon><InputGroupInput v-model="directorySearch" placeholder="搜索仓库" aria-label="搜索侧栏目录" /><InputGroupAddon v-if="directorySearch" align="inline-end"><InputGroupButton size="icon-sm" aria-label="清空搜索" @click="directorySearch = ''"><XIcon /></InputGroupButton></InputGroupAddon></InputGroup>
-    <AppTooltip text="刷新全部"><Button variant="ghost" size="icon" aria-label="刷新全部" :disabled="workspace.isLoading || workspace.operationBusy" @click="workspace.refresh(true)"><RefreshCwIcon :class="{'animate-spin': workspace.isLoading}" /></Button></AppTooltip>
+    <InputGroup class="min-w-0 flex-1"><InputGroupAddon><SearchIcon /></InputGroupAddon><InputGroupInput v-model="directorySearch" placeholder="搜索仓库" aria-label="搜索侧栏目录" /><InputGroupAddon v-if="directorySearch" align="inline-end"><InputGroupButton size="icon-sm" aria-label="清空搜索" @click="directorySearch = ''" title="清空搜索"><XIcon /></InputGroupButton></InputGroupAddon></InputGroup>
+    <AppTooltip text="刷新全部"><Button variant="ghost" size="icon" aria-label="刷新全部" :disabled="workspace.isLoading || workspace.operationBusy" @click="refreshRepositories" title="刷新全部"><RefreshCwIcon :class="{'animate-spin': workspace.isLoading}" /></Button></AppTooltip>
    </div>
    <ScrollArea class="min-h-0 flex-1">
     <nav v-if="repositoryModule" class="flex flex-col gap-4 p-2" aria-label="仓库导航">
      <section class="flex flex-col gap-1">
-      <div class="flex items-center justify-between py-2"><Button v-if="!collapsed" variant="plain" size="sm" class="justify-start px-0" @click="router.push('/')">全部仓库 <Badge variant="secondary">{{ singles.length }}</Badge></Button><div class="flex items-center gap-1"><AppTooltip v-if="!collapsed" :text="repositoriesExpanded ? '收起仓库列表' : '展开仓库列表'"><Button size="icon-sm" variant="ghost" :aria-label="repositoriesExpanded ? '收起仓库列表' : '展开仓库列表'" :aria-expanded="repositoriesExpanded" aria-controls="sidebar-repositories" @click="repositoriesExpanded = !repositoriesExpanded"><ChevronDownIcon v-if="repositoriesExpanded" /><ChevronRightIcon v-else /></Button></AppTooltip><AddRepositoryMenu compact :disabled="workspace.isLoading || workspace.operationBusy" @local="add('repository')" /></div></div>
+      <div class="flex items-center justify-between py-2"><Button v-if="!collapsed" variant="plain" size="sm" class="justify-start px-0" @click="router.push('/')">全部仓库 <Badge variant="secondary">{{ singles.length }}</Badge></Button><div class="flex items-center gap-1"><AppTooltip v-if="!collapsed" :text="repositoriesExpanded ? '收起仓库列表' : '展开仓库列表'"><Button size="icon-sm" variant="ghost" :aria-label="repositoriesExpanded ? '收起仓库列表' : '展开仓库列表'" :aria-expanded="repositoriesExpanded" aria-controls="sidebar-repositories" @click="repositoriesExpanded = !repositoriesExpanded" :title="repositoriesExpanded ? '收起仓库列表' : '展开仓库列表'"><ChevronDownIcon v-if="repositoriesExpanded" /><ChevronRightIcon v-else /></Button></AppTooltip><AddRepositoryMenu compact :disabled="workspace.isLoading || workspace.operationBusy" @local="add('repository')" /></div></div>
       <div id="sidebar-repositories" v-show="collapsed || repositoriesExpanded" class="flex min-w-0 flex-col gap-1"><p v-if="!collapsed && !singles.length" class="flex min-h-20 items-center justify-center px-2 py-4 text-center text-sm text-muted-foreground">{{ directorySearch ? '无匹配结果' : '暂无数据' }}</p>
       <div v-for="repo in singles" :key="repo.id" class="flex min-w-0 items-center gap-1">
        <AppTooltip :text="displayPath(repo.path)"><Button :variant="repo.id === route.params.id ? 'secondary' : 'ghost'" class="min-w-0 flex-1 justify-start" @click="router.push({name: 'repository', params: {id: repo.id}})"><GitBranchIcon data-icon="inline-start" /><span v-if="!collapsed" class="truncate">{{ repo.name }}</span><PinIcon v-if="business.pins.includes(repo.id) && !collapsed" class="ml-auto" /></Button></AppTooltip>
-       <AppTooltip text="移除仓库" v-if="!collapsed"><Button variant="destructive-ghost" size="icon-sm" aria-label="移除仓库" :disabled="workspace.operationBusy || workspace.isLoading" @click="remove(repo.path)"><Trash2Icon /></Button></AppTooltip>
+       <AppTooltip text="移除仓库" v-if="!collapsed"><Button variant="destructive-ghost" size="icon-sm" aria-label="移除仓库" :disabled="workspace.operationBusy || workspace.isLoading" @click="remove(repo.path)" title="移除仓库"><Trash2Icon /></Button></AppTooltip>
       </div>
       </div>
      </section>
@@ -109,10 +118,10 @@ onMounted(() => { if (isTauri() && !workspace.lastUpdated) void workspace.refres
    <TaskCenter :compact="collapsed" /><Button v-if="clone.tasks.length" variant="ghost" class="m-2 shrink-0" @click="clone.dialogOpen = true">{{ collapsed ? '克隆' : clone.running ? '克隆进行中 · 查看任务' : '查看克隆任务' }}</Button>
    <Separator />
    <div class="flex shrink-0 items-center justify-center gap-1 p-2">
-    <AppTooltip :text="collapsed ? '展开侧栏' : '收起侧栏'"><Button variant="ghost" size="icon" :aria-label="collapsed ? '展开侧栏' : '收起侧栏'" @click="collapsed = !collapsed"><PanelLeftOpenIcon v-if="collapsed" /><PanelLeftCloseIcon v-else /></Button></AppTooltip>
+    <AppTooltip :text="collapsed ? '展开侧栏' : '收起侧栏'"><Button variant="ghost" size="icon" :aria-label="collapsed ? '展开侧栏' : '收起侧栏'" @click="collapsed = !collapsed" :title="collapsed ? '展开侧栏' : '收起侧栏'"><PanelLeftOpenIcon v-if="collapsed" /><PanelLeftCloseIcon v-else /></Button></AppTooltip>
     <template v-if="!collapsed">
-     <Tooltip><Popover v-model:open="themeOpen"><PopoverAnchor as-child><TooltipTrigger as-child><Button variant="ghost" size="icon" aria-label="外观模式" aria-haspopup="dialog" :aria-expanded="themeOpen" @click.stop="themeOpen = !themeOpen"><MonitorIcon v-if="settings.theme === 'system'" /><MoonIcon v-else-if="settings.isDark" /><SunIcon v-else /></Button></TooltipTrigger></PopoverAnchor><TooltipContent side="top">外观模式</TooltipContent><PopoverContent side="top" align="start" :side-offset="6" class="w-40 rounded-md p-1"><div role="menu" aria-label="外观模式" class="flex flex-col gap-0.5"><Button v-for="option in themeOptions" :key="option.value" variant="ghost" role="menuitemradio" :aria-checked="settings.theme === option.value" class="h-8 w-full justify-start gap-2 rounded-sm px-2 font-normal" @click="settings.theme = option.value; themeOpen = false"><component :is="option.icon" data-icon="inline-start" />{{ option.label }}<CheckIcon v-if="settings.theme === option.value" class="ml-auto" /></Button></div></PopoverContent></Popover></Tooltip>
-     <AppTooltip text="设置"><Button as-child variant="ghost" size="icon" aria-label="设置"><RouterLink to="/settings"><SettingsIcon /></RouterLink></Button></AppTooltip>
+     <Tooltip><Popover v-model:open="themeOpen"><PopoverAnchor as-child><TooltipTrigger as-child><Button variant="ghost" size="icon" aria-label="外观模式" aria-haspopup="dialog" :aria-expanded="themeOpen" @click.stop="themeOpen = !themeOpen" title="外观模式"><MonitorIcon v-if="settings.theme === 'system'" /><MoonIcon v-else-if="settings.isDark" /><SunIcon v-else /></Button></TooltipTrigger></PopoverAnchor><TooltipContent side="top">外观模式</TooltipContent><PopoverContent side="top" align="start" :side-offset="6" class="w-40 rounded-md p-1"><div role="menu" aria-label="外观模式" class="flex flex-col gap-0.5"><Button v-for="option in themeOptions" :key="option.value" variant="ghost" role="menuitemradio" :aria-checked="settings.theme === option.value" class="h-8 w-full justify-start gap-2 rounded-sm px-2 font-normal" @click="settings.theme = option.value; themeOpen = false; toast.success('外观模式已切换')"><component :is="option.icon" data-icon="inline-start" />{{ option.label }}<CheckIcon v-if="settings.theme === option.value" class="ml-auto" /></Button></div></PopoverContent></Popover></Tooltip>
+     <AppTooltip text="设置"><Button as-child variant="ghost" size="icon" aria-label="设置" title="设置"><RouterLink to="/settings"><SettingsIcon /></RouterLink></Button></AppTooltip>
     </template>
    </div>
   </Card>

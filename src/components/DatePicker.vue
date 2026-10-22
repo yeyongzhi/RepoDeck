@@ -17,7 +17,7 @@ function select(date: DateValue | undefined) {
 </script>
 <template>
  <div><Popover v-model:open="open">
-  <PopoverTrigger as-child><Button variant="outline" class="w-full min-w-0 justify-start" :aria-label="placeholder"><CalendarDaysIcon data-icon="inline-start" /><span class="truncate">{{ model || placeholder }}</span></Button></PopoverTrigger>
+  <PopoverTrigger as-child><Button variant="outline" class="w-full min-w-0 justify-start" :aria-label="placeholder" :title="placeholder"><CalendarDaysIcon data-icon="inline-start" /><span class="truncate">{{ model || placeholder }}</span></Button></PopoverTrigger>
   <PopoverContent class="w-auto p-0" align="start"><Calendar :model-value="value" :min-value="props.min ? parseDate(props.min) : undefined" :max-value="props.max ? parseDate(props.max) : undefined" locale="zh-CN" layout="month-and-year" initial-focus @update:model-value="select" /></PopoverContent>
  </Popover></div>
 </template>

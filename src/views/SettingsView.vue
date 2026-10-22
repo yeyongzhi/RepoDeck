@@ -3,6 +3,8 @@ import { ArrowLeftIcon, CheckIcon, GitBranchIcon, MonitorIcon, MoonIcon, SunIcon
 import { version as packageVersion } from '../../package.json'
 import { storeToRefs } from 'pinia'
 import { ref } from 'vue'
+import { toast } from 'vue-sonner'
+import { watchDebounced } from '@vueuse/core'
 import { useRouter } from 'vue-router'
 import { useSettingsStore } from '@/stores/settings'
 import type { ThemeMode } from '@/lib/preferences'
@@ -29,6 +31,7 @@ const category = ref('通用')
 const resetOpen = ref(false)
 const settings = useSettingsStore()
 const { theme, sidebarWidth, borderRadius, fontSize } = storeToRefs(settings)
+watchDebounced(() => [settings.theme, settings.accent, settings.borderRadius, settings.fontSize, settings.sidebarWidth, settings.options.density], () => { toast.success('外观设置已应用', { id: 'appearance-updated' }) }, { debounce: 500 })
 const themeOptions: { value: ThemeMode; label: string; icon: typeof SunIcon }[] = [
   { value: 'light', label: '亮色', icon: SunIcon },
   { value: 'dark', label: '暗色', icon: MoonIcon },
@@ -40,7 +43,7 @@ function setTheme(value: unknown) { if (themeOptions.some((option) => option.val
 
 <template>
  <div class="flex h-full min-h-0 min-w-0 flex-col gap-3">
-  <Card class="shrink-0 flex-row flex-wrap items-center justify-between gap-2 p-2"><div class="flex items-center gap-2"><Button variant="outline" size="icon-sm" aria-label="返回上一页" @click="goBack"><ArrowLeftIcon /></Button><nav aria-label="设置分类" class="flex flex-wrap items-center gap-1"><Button v-for="item in ['通用', '外观', '仓库', '数据', '关于']" :key="item" :variant="category === item ? 'default' : 'ghost'" :aria-current="category === item ? 'page' : undefined" @click="category = item">{{ item }}</Button></nav></div><p class="ml-auto px-2 text-right text-sm text-muted-foreground">{{ ({通用:'设置启动与浏览偏好', 外观:'调整界面外观与阅读体验', 仓库:'管理扫描目录与仓库排序', 数据:'管理本机数据与操作记录', 关于:'了解 RepoDeck'})[category] }}</p></Card>
+  <Card class="shrink-0 flex-row flex-wrap items-center justify-between gap-2 p-2"><div class="flex items-center gap-2"><Button variant="outline" size="icon-sm" aria-label="返回上一页" @click="goBack" title="返回上一页"><ArrowLeftIcon /></Button><nav aria-label="设置分类" class="flex flex-wrap items-center gap-1"><Button v-for="item in ['通用', '外观', '仓库', '数据', '关于']" :key="item" :variant="category === item ? 'default' : 'ghost'" :aria-current="category === item ? 'page' : undefined" @click="category = item">{{ item }}</Button></nav></div><p v-if="category !== '关于'" class="ml-auto px-2 text-right text-sm text-muted-foreground">{{ ({通用:'设置启动与浏览偏好', 外观:'调整界面外观与阅读体验', 仓库:'管理扫描目录与仓库排序', 数据:'管理本机数据与操作记录'})[category] }}</p></Card>
   <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
 
    <ScrollArea class="min-h-0 min-w-0 flex-1"><div class="flex flex-col gap-4 pr-2 pb-2">
@@ -74,7 +77,7 @@ function setTheme(value: unknown) { if (themeOptions.some((option) => option.val
       </Card>
 
 </template><div v-if="category !== '关于'" class="flex justify-end"><Button variant="outline" @click="resetOpen = true">恢复本页默认设置</Button></div></div></ScrollArea></div></div>
-<Dialog v-model:open="resetOpen"><DialogContent><DialogHeader><DialogTitle>恢复“{{ category }}”默认设置？</DialogTitle><DialogDescription>仅恢复当前分类的偏好，其他分类及仓库数据保留。</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" @click="resetOpen = false">取消</Button><Button @click="settings.resetCategory(category); resetOpen = false">恢复默认</Button></DialogFooter></DialogContent></Dialog>
+<Dialog v-model:open="resetOpen"><DialogContent><DialogHeader><DialogTitle>恢复“{{ category }}”默认设置？</DialogTitle><DialogDescription>仅恢复当前分类的偏好，其他分类及仓库数据保留。</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" @click="resetOpen = false">取消</Button><Button @click="settings.resetCategory(category); resetOpen = false; toast.success('已恢复当前分类的默认设置')">恢复默认</Button></DialogFooter></DialogContent></Dialog>
 </template>
 
 <style scoped>

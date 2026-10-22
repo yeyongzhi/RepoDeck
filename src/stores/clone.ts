@@ -68,7 +68,9 @@ export const useCloneStore = defineStore('clone', () => {
         }
         if (task.value.register && useWorkspaceStore().error) task.value.error = `克隆已完成，列表刷新失败：${useWorkspaceStore().error}`
       }
-    } catch (reason) { task.value.state = 'error'; task.value.error = String(reason) }
+      if (task.value.error) toast.warning(task.value.error)
+      else toast.success(result.stopped ? `克隆已停止${result.deleted ? '，本次文件已删除' : '，已下载文件保留'}` : `${task.value.name} 克隆完成`)
+    } catch (reason) { task.value.state = 'error'; task.value.error = String(reason); toast.error(task.value.error) }
     finally { running.value = false; await flushTasks().catch(e => toast.error(String(e))) }
   }
   async function stop(id: string, deleteFiles: boolean) {
@@ -87,11 +89,11 @@ export const useCloneStore = defineStore('clone', () => {
   }
   async function removeDirectory(path?: string) {
     const next = path ? directories.value.filter(item => item !== path) : []
-    await saveBusiness('directories',next); directories.value = next
+    await saveBusiness('directories',next); directories.value = next; toast.success(path ? '历史目录已移除' : '历史目录已清空')
   }
   async function registerExisting(task: CloneTask) {
     if (running.value) return
-    try { await useWorkspaceStore().addRoot(task.path,'repository'); task.register = true; task.state = 'success'; task.percent = 100; task.error = ''; await flushTasks() } catch(e) { toast.error(String(e)) }
+    try { await useWorkspaceStore().addRoot(task.path,'repository'); task.register = true; task.state = 'success'; task.percent = 100; task.error = ''; await flushTasks(); toast.success('已登记克隆仓库') } catch(e) { toast.error(String(e)) }
   }
   return { registerExisting, reloadSavedTasks, loadDirectories, groupId, retry, removeDirectory, flushTasks, tasks, running, dialogOpen, url, parent, name, quick, register, directories, openDialog, rememberDirectory, start, stop }
 })

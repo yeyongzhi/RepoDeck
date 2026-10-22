@@ -34,9 +34,9 @@ const clean = computed(() => !props.repo.isDirty && !props.repo.isDetached && !p
 <template>
   <Card :class="cn('repository-card relative min-w-0 gap-0 overflow-hidden py-0 transition-shadow hover:shadow-md', checked && 'ring-2 ring-primary/30')" :data-layout="layout">
     <div class="absolute right-3 top-3 flex items-center gap-2">
-<AppTooltip :text="pinned ? '取消置顶' : '置顶仓库'"><Button variant="ghost" size="icon-sm" :aria-label="pinned ? '取消置顶' : '置顶仓库'" :aria-pressed="pinned" @click="emit('pin')"><PinIcon :class="pinned && 'text-primary'" /></Button></AppTooltip><Checkbox :model-value="checked" :aria-label="`选择 ${repo.name} 用于批量同步`" :disabled="disabled" @update:model-value="emit('select')" />
+<AppTooltip :text="pinned ? '取消置顶' : '置顶仓库'"><Button variant="ghost" size="icon-sm" :aria-label="pinned ? '取消置顶' : '置顶仓库'" :aria-pressed="pinned" @click="emit('pin')" :title="pinned ? '取消置顶' : '置顶仓库'"><PinIcon :class="pinned && 'text-primary'" /></Button></AppTooltip><Checkbox :model-value="checked" :aria-label="`选择 ${repo.name} 用于批量同步`" :disabled="disabled" @update:model-value="emit('select')" />
       <DropdownMenu>
-        <DropdownMenuTrigger as-child><Button variant="ghost" size="icon-sm" :aria-label="`${repo.name} 功能菜单`" :disabled="disabled"><EllipsisIcon /></Button></DropdownMenuTrigger>
+        <DropdownMenuTrigger as-child><Button variant="ghost" size="icon-sm" :aria-label="`${repo.name} 功能菜单`" :disabled="disabled" :title="`${repo.name} 功能菜单`"><EllipsisIcon /></Button></DropdownMenuTrigger>
         <DropdownMenuContent align="end" class="w-52">
           <DropdownMenuLabel class="truncate">{{ repo.name }}</DropdownMenuLabel>
           <DropdownMenuGroup>

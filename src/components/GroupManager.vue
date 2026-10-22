@@ -42,10 +42,10 @@ async function save() {
    await groups.save(groups.editing ? groups.groups.map(group => group.id === item.id ? item : group) : [...groups.groups,item])
   }
   groups.dialogOpen = false; toast.success('分组已保存')
- } catch (reason) { error.value = String(reason) }
+ } catch (reason) { error.value = String(reason); toast.error(error.value) }
 }
 async function remove() {
- try { const id = groups.editing; await groups.save(groups.groups.filter(item => item.id !== id)); groups.dialogOpen = false; if (router.currentRoute.value.query.group === id) await router.push('/'); toast.success('分组已删除') } catch (reason) { error.value = String(reason) }
+ try { const id = groups.editing; await groups.save(groups.groups.filter(item => item.id !== id)); groups.dialogOpen = false; if (router.currentRoute.value.query.group === id) await router.push('/'); toast.success('分组已删除') } catch (reason) { error.value = String(reason); toast.error(error.value) }
 }
 </script>
 <template>

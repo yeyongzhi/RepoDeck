@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { ChevronDownIcon, ChevronRightIcon, FileCode2Icon, FolderIcon, FolderOpenIcon } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { ref } from 'vue'
+import { toast } from 'vue-sonner'
 import type { TreeEntry } from '@/types/git'
 
 const props = defineProps<{ repoPath: string; entry: TreeEntry; depth?: number }>()
@@ -23,6 +24,7 @@ async function toggle() {
     loaded.value = true
   } catch (reason) {
     error.value = String(reason)
+    toast.error(`读取目录失败：${error.value}`)
   }
 }
 </script>

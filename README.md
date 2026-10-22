@@ -2,11 +2,11 @@
 
 本地桌面 Git 仓库工作台，适合同时维护多个项目的开发者，集中查看仓库状态并完成日常 Git 操作。
 
-当前代码版本：**0.0.1-beta1（测试版）**。
+当前代码版本：**0.0.1-beta2（测试版）**。
 
-[查看本次预发布及安装包](https://github.com/yeyongzhi/RepoDeck/releases/tag/v0.0.1-beta1) · [产品文档](https://yeyongzhi.github.io/RepoDeck/) · [更新日志](docs/changelog.md)
+[查看本次预发布及安装包](https://github.com/yeyongzhi/RepoDeck/releases/tag/v0.0.1-beta2) · [产品文档](https://yeyongzhi.github.io/RepoDeck/) · [更新日志](docs/changelog.md)
 
-本版本的安装包在 GitHub Release 发布完成后提供下载，属于预发布版本。
+本版本属于预发布版本，Windows x64 安装包通过上方预发布页面提供；下载前请确认页面已完成发布。
 
 ## 核心功能
 
@@ -18,7 +18,7 @@
 
 ## 安装与使用
 
-1. 在本次预发布页面下载 Windows x64 的 `RepoDeck_0.0.1-beta1_x64-setup.exe`，运行安装程序。
+1. 在本次预发布页面下载 Windows x64 的 `RepoDeck_0.0.1-beta2_x64-setup.exe`，运行安装程序。
 2. 本机安装 Git 并配置 HTTPS 凭据或 SSH 密钥；系统需要 WebView2 Runtime。
 3. 启动后点击「添加仓库」选择本地项目，或选择「从远程添加」。顶部加号提供快速克隆。
 

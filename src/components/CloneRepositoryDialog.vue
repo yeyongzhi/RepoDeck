@@ -25,12 +25,12 @@ import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from '@/components/u
 const clone = useCloneStore()
 const groups = useGroupsStore()
 async function copyError(value: string) { try { await navigator.clipboard.writeText(value); toast.success('错误日志已复制') } catch { toast.error('复制失败') } }
-async function openDirectory(path: string) { try { await invoke('open_repository_target',{target:path,local:true}) } catch(e) { toast.error(String(e)) } }
+async function openDirectory(path: string) { try { await invoke('open_repository_target',{target:path,local:true}); toast.success('已请求打开目录') } catch(e) { toast.error(String(e)) } }
 const stopId = ref<string | null>(null)
 const logValue = ref<string | null>(null)
 async function confirmStop(deleteFiles: boolean) {
   if (!stopId.value) return
-  try { await clone.stop(stopId.value, deleteFiles); stopId.value = null } catch (e) { toast.error(String(e)); stopId.value = null }
+  try { await clone.stop(stopId.value, deleteFiles); stopId.value = null; toast.info(deleteFiles ? '已请求停止克隆并删除文件' : '已请求停止克隆并保留文件') } catch (e) { toast.error(String(e)); stopId.value = null }
 }
 const workspace = useWorkspaceStore()
 const router = useRouter()
@@ -52,7 +52,7 @@ async function view(path: string) {
   if (repo) await router.push({ name: 'repository', params: { id: repo.id } })
   else toast.error(workspace.error || '仓库暂未加载，请刷新仓库列表')
 }
-async function openApp(path: string, kind: string) { try { await invoke('open_repository_app', { path, kind }) } catch (e) { toast.error(String(e)) } }
+async function openApp(path: string, kind: string) { try { await invoke('open_repository_app', { path, kind }); toast.success(kind === 'editor' ? '已请求在编辑器打开' : '已请求打开终端') } catch (e) { toast.error(String(e)) } }
 </script>
 
 <template>
@@ -60,7 +60,7 @@ async function openApp(path: string, kind: string) { try { await invoke('open_re
     <Card><CardHeader><CardTitle>克隆仓库</CardTitle><CardDescription>输入 Git 地址，将代码下载到本机。</CardDescription></CardHeader>
       <CardContent><form class="flex flex-col gap-5" @submit.prevent="start"><FieldGroup>
         <Field><FieldLabel for="clone-url">Git 仓库地址</FieldLabel><Input id="clone-url" v-model="clone.url" placeholder="https://github.com/owner/repository.git" :disabled="clone.running" required /><FieldDescription>支持 HTTPS 和 SSH；私有仓库使用本机已配置的 Git 凭据或 SSH 密钥。</FieldDescription></Field>
-        <Field><FieldLabel for="clone-parent">存放目录</FieldLabel><div class="flex gap-2"><Input id="clone-parent" v-model="clone.parent" placeholder="选择或输入已有目录" :disabled="clone.running" required /><Button type="button" variant="outline" :disabled="clone.running" @click="choose"><FolderOpenIcon data-icon="inline-start" />选择目录</Button></div><template v-if="clone.directories.length"><FieldDescription>历史选择目录：点击即可快速选择</FieldDescription><div class="flex gap-2"><Button type="button" size="sm" variant="ghost" :disabled="clone.running" @click="clone.removeDirectory().catch(e => toast.error(String(e)))">清空历史</Button></div><div class="flex flex-wrap gap-2"><div v-for="directory in clone.directories" :key="directory" class="flex max-w-full items-center gap-1"><Button type="button" variant="outline" size="sm" class="h-auto max-w-full whitespace-normal break-all text-left" :disabled="clone.running" @click="clone.rememberDirectory(directory).then(() => { clone.parent = directory }).catch(e => toast.error(String(e)))">{{ displayPath(directory) }}</Button><Button type="button" size="icon-sm" variant="ghost" :aria-label="`移除历史目录 ${displayPath(directory)}`" :disabled="clone.running" @click="clone.removeDirectory(directory).catch(e => toast.error(String(e)))">×</Button></div></div></template></Field>
+        <Field><FieldLabel for="clone-parent">存放目录</FieldLabel><div class="flex gap-2"><Input id="clone-parent" v-model="clone.parent" placeholder="选择或输入已有目录" :disabled="clone.running" required /><Button type="button" variant="outline" :disabled="clone.running" @click="choose"><FolderOpenIcon data-icon="inline-start" />选择目录</Button></div><template v-if="clone.directories.length"><FieldDescription>历史选择目录：点击即可快速选择</FieldDescription><div class="flex gap-2"><Button type="button" size="sm" variant="ghost" :disabled="clone.running" @click="clone.removeDirectory().catch(e => toast.error(String(e)))">清空历史</Button></div><div class="flex flex-wrap gap-2"><div v-for="directory in clone.directories" :key="directory" class="flex max-w-full items-center gap-1"><Button type="button" variant="outline" size="sm" class="h-auto max-w-full whitespace-normal break-all text-left" :disabled="clone.running" @click="clone.rememberDirectory(directory).then(() => { clone.parent = directory }).catch(e => toast.error(String(e)))">{{ displayPath(directory) }}</Button><Button type="button" size="icon-sm" variant="ghost" :aria-label="`移除历史目录 ${displayPath(directory)}`" :disabled="clone.running" @click="clone.removeDirectory(directory).catch(e => toast.error(String(e)))" :title="`移除历史目录 ${displayPath(directory)}`">×</Button></div></div></template></Field>
         <Field v-if="clone.quick" orientation="horizontal"><Switch id="quick-clone-register" v-model="clone.register" :disabled="clone.running" /><FieldLabel for="quick-clone-register">克隆后加入仓库列表</FieldLabel></Field>
         <Field><FieldLabel for="clone-name">项目目录名</FieldLabel><Input id="clone-name" v-model="clone.name" :disabled="clone.running" placeholder="repository" required /><FieldDescription v-if="clone.parent && clone.name" class="break-all">将克隆到：{{ target }}</FieldDescription></Field>
         <Field v-if="clone.register"><FieldLabel>加入分组（可选）</FieldLabel><Select v-model="clone.groupId" :disabled="clone.running"><SelectTrigger aria-label="克隆后加入分组"><SelectValue placeholder="不加入分组" /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="none">不加入分组</SelectItem><SelectItem v-for="group in groups.groups" :key="group.id" :value="group.id">{{ group.name }}</SelectItem></SelectGroup></SelectContent></Select></Field>

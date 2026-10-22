@@ -2,9 +2,9 @@
 
 ## 下载与前置条件
 
-当前版本：**0.0.1-beta1（测试版）**。本次提供 Windows x64 安装包，其他平台未验证。
+当前版本：**0.0.1-beta2（测试版）**。本次提供 Windows x64 安装包，其他平台未验证。
 
-前往 [v0.0.1-beta1 预发布页面](https://github.com/yeyongzhi/RepoDeck/releases/tag/v0.0.1-beta1) 获取 `RepoDeck_0.0.1-beta1_x64-setup.exe`；资产在发布完成后可下载。
+前往 [v0.0.1-beta2 预发布页面](https://github.com/yeyongzhi/RepoDeck/releases/tag/v0.0.1-beta2) 获取 `RepoDeck_0.0.1-beta2_x64-setup.exe`；资产在发布完成后可下载。
 
 本机需安装 Git，系统需具备 WebView2 Runtime。私有仓库使用本机 Git 的 HTTPS 凭据或 SSH 密钥。可在终端运行 `git --version` 检查 Git。
 
