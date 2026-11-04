@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppLogo from '@/components/AppLogo.vue'
 import { isTauri } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
 import { ChevronDownIcon, ChevronRightIcon, GitBranchIcon, PinIcon, SearchIcon, XIcon, SettingsIcon, MonitorIcon, CheckIcon, RefreshCwIcon, Trash2Icon, PanelLeftCloseIcon, PanelLeftOpenIcon, MoonIcon, SunIcon } from '@lucide/vue'
@@ -95,7 +96,7 @@ onMounted(() => { if (isTauri() && !workspace.lastUpdated) void workspace.refres
  <ResizablePanelGroup direction="horizontal" class="min-h-0">
  <ResizablePanel v-if="route.name !== 'settings'" ref="sidebarPanel" size-unit="px" :default-size="settings.sidebarWidth" :min-size="collapsed ? 64 : 200" :max-size="collapsed ? 64 : 480" @resize="saveWidth">
   <Card class="flex h-full min-h-0 flex-col gap-0 overflow-hidden bg-card py-0 shadow-sm">
-   <RouterLink to="/" class="flex h-16 shrink-0 items-center gap-2 px-4 outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50" aria-label="RepoDeck 首页"><span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"><GitBranchIcon class="size-[1.125rem]" /></span><span v-if="!collapsed" class="text-base font-semibold">RepoDeck</span></RouterLink>
+   <RouterLink to="/" class="flex h-16 shrink-0 items-center gap-2 px-4 outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50" aria-label="RepoDeck 首页"><AppLogo /><span v-if="!collapsed" class="text-base font-semibold">RepoDeck</span></RouterLink>
 
    <div v-if="!collapsed && repositoryModule" class="flex shrink-0 items-center gap-1 p-2">
     <InputGroup class="min-w-0 flex-1"><InputGroupAddon><SearchIcon /></InputGroupAddon><InputGroupInput v-model="directorySearch" placeholder="搜索仓库" aria-label="搜索侧栏目录" /><InputGroupAddon v-if="directorySearch" align="inline-end"><InputGroupButton size="icon-sm" aria-label="清空搜索" @click="directorySearch = ''" title="清空搜索"><XIcon /></InputGroupButton></InputGroupAddon></InputGroup>

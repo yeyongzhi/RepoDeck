@@ -1,6 +1,9 @@
 ---
 layout: home
 hero:
+  image:
+    src: /logo.png
+    alt: RepoDeck Logo
   name: RepoDeck
   text: 本地 Git 仓库工作台
   tagline: 集中管理项目，查看状态，完成日常开发操作。
@@ -24,4 +27,4 @@ features:
 
 RepoDeck 面向在本机维护多个 Git 项目的开发者。既可登记单个仓库，也可扫描固定代码目录，集中查看分支、改动与远端同步状态。
 
-当前版本为 **0.0.1-beta2 测试版**，提供 Windows x64 安装包。请在使用前备份重要管理数据。
+当前版本为 **0.0.1-beta3 测试版**，提供 Windows x64 安装包。请在使用前备份重要管理数据。

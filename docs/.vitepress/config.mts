@@ -6,7 +6,9 @@ export default defineConfig({
   description: '本地 Git 仓库工作台',
   base: '/RepoDeck/',
   cleanUrls: true,
+  head: [['link', { rel: 'icon', type: 'image/png', href: '/RepoDeck/logo.png' }]],
   themeConfig: {
+    logo: { src: '/logo.png', alt: 'RepoDeck Logo' },
     nav: [
       { text: '介绍', link: '/' },
       { text: '安装', link: '/install' },
